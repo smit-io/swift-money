@@ -638,21 +638,3 @@ MIT License - See LICENSE file for details
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for version history and updates.
-
-## Roadmap
-
-- [x] ~~Custom rounding modes~~ ✅ Completed
-- [ ] Multi-currency conversion support with exchange rates
-- [ ] Additional currency metadata (native symbols, names)
-- [ ] Protocol-based customization for currency providers
-- [ ] Historical amount tracking with timestamps
-- [ ] Built-in VAT/tax calculation helpers
-- [ ] Money range types for pricing tiers
-
-## Credits
-
-Built with inspiration from payment processing best practices. Special thanks to the Swift community for feedback and contributions.
-
----
-
-**Note**: This library focuses on representing and manipulating monetary amounts. Currency conversion requires exchange rate data and is not included. For multi-currency applications, maintain amounts in their original currencies and convert at display/transaction time using external exchange rate services.
