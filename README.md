@@ -13,7 +13,7 @@ A type-safe Swift library for representing and manipulating monetary values with
 - 🛡️ **Overflow Protection**: Built-in overflow detection for all arithmetic operations
 - 🌐 **Localization**: Automatic currency formatting based on locale
 - 📊 **Rich API**: Arithmetic operations, splitting, allocation, and percentage calculations
-- ✅ **Well Tested**: Comprehensive test suite with 94+ tests
+- ✅ **Well Tested**: Comprehensive test suite with 102 tests
 
 ## Requirements
 
@@ -28,7 +28,7 @@ Add MoneyKit to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/swift-money.git", from: "1.0.0")
+    .package(url: "https://github.com/1amageek/swift-money.git", from: "1.0.0")
 ]
 ```
 
@@ -618,7 +618,7 @@ swift test
 ```
 
 Test coverage:
-- ✅ 94 tests across 4 test suites
+- ✅ 102 tests across 4 test suites
 - ✅ Currency validation and equality
 - ✅ Money arithmetic and overflow detection
 - ✅ Rounding modes and calculations
