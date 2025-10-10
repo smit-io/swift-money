@@ -13,7 +13,8 @@ public struct Currency: Sendable, Hashable, Codable {
     public let decimalPlaces: Int
 
     /// The divisor used to convert from the smallest unit to the standard unit.
-    /// For USD: 100 (cents to dollars), for JPY: 1 (yen to yen).
+    /// Multiply the smallest unit amount by this divisor to get the standard unit amount.
+    /// For USD: 0.01 (1999 cents × 0.01 = 19.99 dollars), for JPY: 1.0 (1000 yen × 1.0 = 1000 yen).
     public let divisor: Decimal
 
     /// Creates a currency with the specified code and decimal places.

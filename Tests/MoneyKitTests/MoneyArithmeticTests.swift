@@ -351,4 +351,73 @@ struct MoneyArithmeticTests {
         let sum = parts.reduce(0) { $0 + $1.amount }
         #expect(sum == Int.max - 1000)
     }
+
+    // MARK: - Safe Arithmetic Overflow Tests
+
+    @Test("tryAdd returns nil on overflow")
+    func tryAddOverflow() throws {
+        let large = try Money(amount: Int.max - 100, currency: .JPY)
+        let small = try Money(amount: 200, currency: .JPY)
+
+        let result = large.tryAdd(small)
+        #expect(result == nil)  // Should return nil, not crash
+    }
+
+    @Test("tryAdd succeeds near Int.max")
+    func tryAddNearMax() throws {
+        let large = try Money(amount: Int.max - 100, currency: .JPY)
+        let small = try Money(amount: 50, currency: .JPY)
+
+        let result = large.tryAdd(small)
+        #expect(result?.amount == Int.max - 50)
+    }
+
+    @Test("tryMultiply returns nil on overflow")
+    func tryMultiplyOverflow() throws {
+        let large = try Money(amount: Int.max / 2 + 1, currency: .JPY)
+
+        let result = large.tryMultiply(by: 3)
+        #expect(result == nil)  // Should return nil, not crash
+    }
+
+    @Test("tryMultiply succeeds with valid multiplication")
+    func tryMultiplyValid() throws {
+        let money = try Money(amount: 1000, currency: .JPY)
+
+        let result = money.tryMultiply(by: 100)
+        #expect(result?.amount == 100000)
+    }
+
+    @Test("tryDivide returns nil on division by zero")
+    func tryDivideByZero() throws {
+        let money = try Money(amount: 1000, currency: .JPY)
+
+        let result = money.tryDivide(by: 0)
+        #expect(result == nil)
+    }
+
+    @Test("tryDivide succeeds with valid division")
+    func tryDivideValid() throws {
+        let money = try Money(amount: 1000, currency: .JPY)
+
+        let result = money.tryDivide(by: 3)
+        #expect(result?.amount == 333)
+    }
+
+    @Test("Money * Decimal throws overflow error")
+    func decimalMultiplicationOverflow() throws {
+        let large = try Money(amount: Int.max / 2, currency: .JPY)
+
+        #expect(throws: MoneyError.self) {
+            _ = try large * Decimal(3.0)
+        }
+    }
+
+    @Test("Money * Decimal succeeds with large valid multiplication")
+    func decimalMultiplicationLarge() throws {
+        let money = try Money(amount: 1_000_000_000, currency: .JPY)
+        let result = try money * Decimal(1.5)
+
+        #expect(result.amount == 1_500_000_000)
+    }
 }

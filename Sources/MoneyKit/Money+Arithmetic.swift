@@ -74,12 +74,27 @@ extension Money {
     ///   - lhs: The Money value.
     ///   - rhs: The decimal multiplier.
     /// - Returns: A new Money value representing the product (rounded).
-    /// - Throws: `MoneyError.negativeAmount` if the result is negative.
+    /// - Throws:
+    ///   - `MoneyError.negativeAmount` if the result is negative.
+    ///   - `MoneyError.amountOverflow` if the result exceeds Int.max.
     public static func * (lhs: Money, rhs: Decimal) throws -> Money {
         var result = Decimal(lhs.amount) * rhs
         var rounded = Decimal()
         NSDecimalRound(&rounded, &result, 0, .plain)
-        let intResult = NSDecimalNumber(decimal: rounded).intValue
+
+        // Check for negative BEFORE conversion (int64Value saturates)
+        guard rounded >= 0 else {
+            throw MoneyError.negativeAmount(Int(clamping: NSDecimalNumber(decimal: rounded).int64Value))
+        }
+
+        // Check for overflow BEFORE conversion (int64Value saturates at Int64.max)
+        guard rounded <= Decimal(Int.max) else {
+            throw MoneyError.amountOverflow(
+                description: "Multiplication overflow: \(lhs.amount) * \(rhs) exceeds Int.max"
+            )
+        }
+
+        let intResult = Int(NSDecimalNumber(decimal: rounded).int64Value)
         return try Money(amount: intResult, currency: lhs.currency)
     }
 
@@ -168,7 +183,15 @@ extension Money {
             share = share / Decimal(total)
             var rounded = Decimal()
             NSDecimalRound(&rounded, &share, 0, .down)
-            let shareInt = NSDecimalNumber(decimal: rounded).intValue
+
+            // Check for overflow BEFORE conversion (int64Value saturates at Int64.max)
+            guard rounded >= 0 && rounded <= Decimal(Int.max) else {
+                throw MoneyError.amountOverflow(
+                    description: "Allocation overflow: share exceeds Int.max"
+                )
+            }
+
+            let shareInt = Int(NSDecimalNumber(decimal: rounded).int64Value)
             allocated.append(try Money(amount: shareInt, currency: currency))
             remainder -= shareInt
         }
@@ -216,13 +239,15 @@ extension Money {
 // MARK: - Safe Arithmetic Methods
 
 extension Money {
-    /// Safely adds another Money value, returning nil if currencies don't match.
+    /// Safely adds another Money value, returning nil if currencies don't match or overflow occurs.
     ///
     /// - Parameter other: The Money value to add.
-    /// - Returns: The sum, or nil if currencies don't match.
+    /// - Returns: The sum, or nil if currencies don't match or overflow occurs.
     public func tryAdd(_ other: Money) -> Money? {
         guard currency == other.currency else { return nil }
-        return try? Money(amount: amount + other.amount, currency: currency)
+        let (result, overflow) = amount.addingReportingOverflow(other.amount)
+        guard !overflow else { return nil }
+        return try? Money(amount: result, currency: currency)
     }
 
     /// Safely subtracts another Money value, returning nil if currencies don't match or result is negative.
@@ -236,23 +261,25 @@ extension Money {
         return try? Money(amount: result, currency: currency)
     }
 
-    /// Safely multiplies by a scalar, returning nil if the result is negative.
+    /// Safely multiplies by a scalar, returning nil if the result is negative or overflow occurs.
     ///
     /// - Parameter scalar: The multiplier.
-    /// - Returns: The product, or nil if the result would be negative.
+    /// - Returns: The product, or nil if the result would be negative or overflow occurs.
     public func tryMultiply(by scalar: Int) -> Money? {
-        let result = amount * scalar
+        let (result, overflow) = amount.multipliedReportingOverflow(by: scalar)
+        guard !overflow else { return nil }
         guard result >= 0 else { return nil }
         return try? Money(amount: result, currency: currency)
     }
 
-    /// Safely divides by a scalar, returning nil if divisor is zero or result is negative.
+    /// Safely divides by a scalar, returning nil if divisor is zero, overflow occurs, or result is negative.
     ///
     /// - Parameter scalar: The divisor.
-    /// - Returns: The quotient, or nil if divisor is zero or result would be negative.
+    /// - Returns: The quotient, or nil if divisor is zero, overflow occurs, or result would be negative.
     public func tryDivide(by scalar: Int) -> Money? {
         guard scalar != 0 else { return nil }
-        let result = amount / scalar
+        let (result, overflow) = amount.dividedReportingOverflow(by: scalar)
+        guard !overflow else { return nil }
         guard result >= 0 else { return nil }
         return try? Money(amount: result, currency: currency)
     }
