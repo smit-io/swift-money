@@ -67,14 +67,21 @@ struct MoneyTests {
 
     @Test("Numeric string formatting")
     func numericString() throws {
+        let locale = Locale.current
+        let decimalSeparator = locale.decimalSeparator ?? "."
+        let groupingSeparator = locale.groupingSeparator ?? ","
+
         let money = try Money(amount: 1999, currency: .USD)
-        #expect(money.numericString == "19.99")
+        #expect(money.numericString == "19\(decimalSeparator)99")
 
         let yen = try Money(amount: 1000, currency: .JPY)
-        #expect(yen.numericString == "1000" || yen.numericString == "1,000")
+        #expect(
+          yen.numericString == "1000"
+          || yen.numericString == "1\(groupingSeparator)000"
+        )
 
         let zero = try Money(amount: 0, currency: .USD)
-        #expect(zero.numericString == "0.00")
+        #expect(zero.numericString == "0\(decimalSeparator)00")
     }
 
     @Test("Currency formatted display")

@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.1
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -21,11 +21,7 @@ let package = Package(
     targets: [
         .target(
             name: "MoneyKit",
-            path: "Sources/MoneyKit",
-            swiftSettings: [
-                .enableUpcomingFeature("BareSlashRegexLiterals"),
-                .enableUpcomingFeature("StrictConcurrency")
-            ]
+            path: "Sources/MoneyKit"
         ),
         .testTarget(
             name: "MoneyKitTests",
@@ -33,5 +29,5 @@ let package = Package(
             path: "Tests/MoneyKitTests"
         ),
     ],
-    swiftLanguageVersions: [.v5]
+    swiftLanguageModes: [.v6]
 )
