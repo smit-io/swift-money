@@ -45,28 +45,24 @@ public struct Currency: Sendable, Hashable, Codable {
     }
 
     /// Returns the default decimal places for a given currency code.
+    ///
+    /// The source of truth is `isoMinorUnits` — the full ISO 4217 minor-units
+    /// table generated from the official registry (see
+    /// `Currency+ISO4217.generated.swift`). Codes absent from the registry
+    /// (withdrawn/historical codes, or non-ISO codes, which the format-only
+    /// validation accepts) fall back to 2, matching the previous behavior.
     private static func defaultDecimalPlaces(for code: String) -> Int {
-        if zeroDecimalCurrencies.contains(code) {
-            return 0
-        } else if threeDecimalCurrencies.contains(code) {
-            return 3
-        } else {
-            return 2 // Most currencies use 2 decimal places
-        }
+        isoMinorUnits[code] ?? 2
     }
 
-    /// Currencies that use zero decimal places.
-    /// These represent amounts in their smallest unit already.
-    private static let zeroDecimalCurrencies: Set<String> = [
-        "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW",
-        "MGA", "PYG", "RWF", "UGX", "VND", "VUV", "XAF",
-        "XOF", "XPF"
-    ]
-
-    /// Currencies that use three decimal places.
-    private static let threeDecimalCurrencies: Set<String> = [
-        "BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"
-    ]
+    /// Whether this currency's code appears in the ISO 4217 registry the
+    /// library was generated against. `false` for withdrawn/historical codes
+    /// and for arbitrary well-formed codes like `"ZZZ"` — both of which
+    /// `Currency(code:)` still accepts (format-only validation) with the
+    /// 2-decimal default.
+    public var isISO: Bool {
+        Self.isoMinorUnits[code] != nil
+    }
 
     // MARK: - Standard Currency Constants
 
