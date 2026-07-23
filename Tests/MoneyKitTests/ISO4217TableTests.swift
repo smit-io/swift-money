@@ -11,7 +11,7 @@ struct ISO4217TableTests {
     /// Re-derives the table from the checked-in registry XML and compares it to
     /// the generated dictionary, so `Currency+ISO4217.generated.swift` can never
     /// drift from its source. Mirrors the generator's policy: skip entries with
-    /// no currency code; "N.A." minor units map to 0.
+    /// no currency code and rows whose minor unit is "N.A.".
     @Test("generated table matches the checked-in registry XML")
     func generatedTableMatchesRegistry() throws {
         let xmlURL = URL(fileURLWithPath: #filePath)
@@ -30,8 +30,10 @@ struct ISO4217TableTests {
         for entry in xml.matches(of: entryPattern) {
             let body = String(entry.1)
             guard let code = body.firstMatch(of: codePattern).map({ String($0.1) }) else { continue }
-            let rawUnits = body.firstMatch(of: unitsPattern).map { String($0.1) } ?? "N.A."
-            let units = rawUnits == "N.A." ? 0 : Int(rawUnits)!
+            let rawUnits = (body.firstMatch(of: unitsPattern).map { String($0.1) } ?? "N.A.")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard rawUnits != "N.A." else { continue }
+            let units = try #require(Int(rawUnits), "unparseable minor units for \(code)")
             if let existing = derived[code] {
                 #expect(existing == units, "registry self-contradiction for \(code)")
             }
@@ -55,9 +57,9 @@ struct ISO4217TableTests {
         #expect(currency.isISO)
     }
 
-    @Test("non-ISO and withdrawn codes stay lenient with the 2-decimal default")
+    @Test("non-ISO, withdrawn, and N.A. minor-unit codes stay lenient with the 2-decimal default")
     func nonISOFallback() throws {
-        for code in ["ZZZ", "ITL", "TRL"] {
+        for code in ["ZZZ", "ITL", "TRL", "XAU", "XDR", "XXX"] {
             let currency = try Currency(code: code)
             #expect(currency.decimalPlaces == 2)
             #expect(!currency.isISO)

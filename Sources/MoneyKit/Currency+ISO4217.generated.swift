@@ -5,14 +5,16 @@
 // published 2026-01-01 by SIX Financial Services, the ISO registrar).
 // Regenerate with: python3 Scripts/generate_iso4217.py — DO NOT EDIT.
 //
-// Policy: entries without a currency code are skipped; "N.A." minor units
-// (XAU, XDR, test codes) map to 0; duplicates must agree (generator-enforced).
+// Policy: entries without a currency code and "N.A." minor-unit rows (XAU,
+// XDR, XXX, test codes) are skipped — those codes fall back to the 2-decimal
+// default; duplicates must agree (generator-enforced).
 
 extension Currency {
 
-    /// ISO 4217 minor units (decimal places) for every active currency code,
-    /// straight from the registry. Codes absent here are either withdrawn
-    /// (historical) or non-ISO; `Currency(code:)` falls back to 2 for those.
+    /// ISO 4217 minor units (decimal places) straight from the registry.
+    /// Codes absent here are withdrawn (historical), non-ISO, or have no
+    /// applicable minor unit ("N.A.": XAU, XDR, XXX, ...); `Currency(code:)`
+    /// falls back to 2 for all of those.
     static let isoMinorUnits: [String: Int] = [
         "AED": 2,
         "AFN": 2,
@@ -171,23 +173,10 @@ extension Currency {
         "WST": 2,
         "XAD": 2,
         "XAF": 0,
-        "XAG": 0,
-        "XAU": 0,
-        "XBA": 0,
-        "XBB": 0,
-        "XBC": 0,
-        "XBD": 0,
         "XCD": 2,
         "XCG": 2,
-        "XDR": 0,
         "XOF": 0,
-        "XPD": 0,
         "XPF": 0,
-        "XPT": 0,
-        "XSU": 0,
-        "XTS": 0,
-        "XUA": 0,
-        "XXX": 0,
         "YER": 2,
         "ZAR": 2,
         "ZMW": 2,
