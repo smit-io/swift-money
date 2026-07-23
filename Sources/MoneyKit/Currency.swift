@@ -22,7 +22,8 @@ public struct Currency: Sendable, Hashable, Codable {
     /// - Parameters:
     ///   - code: The ISO 4217 currency code (must be exactly 3 alphabetic characters).
     ///   - decimalPlaces: The number of decimal places (defaults based on currency).
-    /// - Throws: `CurrencyError.invalidFormat` if the code is not valid.
+    /// - Throws: `CurrencyError.invalidFormat` if the code is not valid, or
+    ///   `CurrencyError.invalidDecimalPlaces` if decimalPlaces is outside 0...30.
     public init(code: String, decimalPlaces: Int? = nil) throws {
         let upperCode = code.uppercased()
         guard upperCode.count == 3,
@@ -30,9 +31,16 @@ public struct Currency: Sendable, Hashable, Codable {
             throw CurrencyError.invalidFormat(code)
         }
 
+        let places = decimalPlaces ?? Self.defaultDecimalPlaces(for: upperCode)
+        // Beyond ~30, Decimal's exponent range silently degrades the divisor
+        // toward 0; negative values would turn it into a multiplier.
+        guard (0...30).contains(places) else {
+            throw CurrencyError.invalidDecimalPlaces(places)
+        }
+
         self.code = upperCode
-        self.decimalPlaces = decimalPlaces ?? Self.defaultDecimalPlaces(for: upperCode)
-        self.divisor = Decimal(sign: .plus, exponent: -self.decimalPlaces, significand: 1)
+        self.decimalPlaces = places
+        self.divisor = Decimal(sign: .plus, exponent: -places, significand: 1)
     }
 
     /// Validates that this currency conforms to ISO 4217 standards.
@@ -55,11 +63,11 @@ public struct Currency: Sendable, Hashable, Codable {
         isoMinorUnits[code] ?? 2
     }
 
-    /// Whether this currency's code appears in the ISO 4217 registry the
-    /// library was generated against. `false` for withdrawn/historical codes
-    /// and for arbitrary well-formed codes like `"ZZZ"` — both of which
-    /// `Currency(code:)` still accepts (format-only validation) with the
-    /// 2-decimal default.
+    /// Whether this currency's code appears in the generated minor-units table,
+    /// i.e. the ISO 4217 registry rows with an applicable minor unit. `false`
+    /// for withdrawn/historical codes, arbitrary well-formed codes like `"ZZZ"`,
+    /// and registry codes whose minor unit is "N.A." (XAU, XDR, XXX, ...) — all
+    /// of which `Currency(code:)` still accepts with the 2-decimal default.
     public var isISO: Bool {
         Self.isoMinorUnits[code] != nil
     }
@@ -102,6 +110,31 @@ public struct Currency: Sendable, Hashable, Codable {
 extension Currency: CustomStringConvertible {
     public var description: String {
         "\(code) (\(decimalPlaces) decimal places)"
+    }
+}
+
+// MARK: - Codable
+
+extension Currency {
+    private enum CodingKeys: String, CodingKey {
+        case code
+        case decimalPlaces
+    }
+
+    /// Decodes through `init(code:decimalPlaces:)` so persisted values get the
+    /// same validation as fresh ones and `divisor` is always re-derived.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            code: container.decode(String.self, forKey: .code),
+            decimalPlaces: container.decode(Int.self, forKey: .decimalPlaces)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(code, forKey: .code)
+        try container.encode(decimalPlaces, forKey: .decimalPlaces)
     }
 }
 
