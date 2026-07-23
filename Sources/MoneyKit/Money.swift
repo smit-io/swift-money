@@ -137,8 +137,12 @@ public struct Money: Sendable, Hashable, Codable {
         _ amount: Decimal,
         currency: Currency
     ) -> String {
+        // Pinned so numericString is a stable, machine-parseable dot-decimal
+        // string on every host locale; formatted(locale:) is the display path.
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.usesGroupingSeparator = false
         formatter.minimumFractionDigits = currency.decimalPlaces
         formatter.maximumFractionDigits = currency.decimalPlaces
 
