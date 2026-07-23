@@ -236,6 +236,29 @@ extension Money {
     }
 }
 
+// MARK: - Signed Arithmetic
+
+extension Money {
+    /// This value as a non-negative `SignedMoney`.
+    public var signed: SignedMoney {
+        SignedMoney(self)
+    }
+
+    /// Subtracts another Money value, allowing a negative result.
+    ///
+    /// Unlike `-`, this never throws `MoneyError.negativeAmount` — the sign
+    /// lands in the returned `SignedMoney`.
+    ///
+    /// - Throws: `MoneyError.currencyMismatch` if the currencies don't match.
+    public func minus(_ other: Money) throws -> SignedMoney {
+        guard currency == other.currency else {
+            throw MoneyError.currencyMismatch(from: currency, to: other.currency)
+        }
+
+        return try SignedMoney(amount: amount - other.amount, currency: currency)
+    }
+}
+
 // MARK: - Safe Arithmetic Methods
 
 extension Money {

@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   examples; use `formatted(locale:)` for display.
 
 ### Added
+- `SignedMoney`: a signed wrapper over `Money` (sign + magnitude) for values
+  that legitimately go negative. `Money.minus(_:)` subtracts without throwing
+  on negative results; full arithmetic (`+`, `-`, `*`, `/`, prefix `-`),
+  `Comparable`, `Codable`, and conversion back via `money`/`absolute`.
 - Initial release of MoneyKit
 - `Money` value type with integer-based smallest unit representation
 - `Currency` type with ISO 4217 support
