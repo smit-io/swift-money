@@ -125,6 +125,54 @@ struct SignedMoneyTests {
         }
     }
 
+    @Test("arithmetic landing exactly on Int.min throws instead of trapping")
+    func intMinResults() throws {
+        // Neither result overflows Int, but Int.min has no representable
+        // magnitude — the init guard inside +/* must reject it.
+        let nearMin = try SignedMoney(amount: -Int.max, currency: .USD)
+        let minusOne = try SignedMoney(amount: -1, currency: .USD)
+        #expect(throws: MoneyError.self) {
+            try nearMin + minusOne
+        }
+
+        let halfMin = try SignedMoney(amount: Int.min / 2, currency: .USD)
+        #expect(throws: MoneyError.self) {
+            try halfMin * 2
+        }
+    }
+
+    @Test("division by a negative scalar flips sign and truncates toward zero")
+    func divisionByNegativeScalar() throws {
+        let value = try SignedMoney(amount: -7, currency: .USD)
+
+        #expect(try (value / -2).amount == 3)
+        #expect(try ((-value) / -2).amount == -3)
+    }
+
+    @Test("decoding rejects Int.min amounts and invalid currency codes")
+    func codableFailurePaths() throws {
+        let intMin = Data(#"{"amount":-9223372036854775808,"currencyCode":"USD"}"#.utf8)
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(SignedMoney.self, from: intMin)
+        }
+
+        let badCode = Data(#"{"amount":100,"currencyCode":"US"}"#.utf8)
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(SignedMoney.self, from: badCode)
+        }
+    }
+
+    @Test("minus landing on zero is sign-normalized")
+    func minusToZero() throws {
+        let money = try Money(amount: 500, currency: .USD)
+
+        let net = try money.minus(money)
+
+        #expect(net.isZero)
+        #expect(!net.isNegative)
+        #expect(net == (try SignedMoney(amount: 0, currency: .USD)))
+    }
+
     @Test("zero is sign-normalized")
     func zeroNormalization() throws {
         let negativeZero = try SignedMoney(amount: 0, currency: .USD)
