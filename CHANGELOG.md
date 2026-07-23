@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that legitimately go negative. `Money.minus(_:)` subtracts without throwing
   on negative results; full arithmetic (`+`, `-`, `*`, `/`, prefix `-`),
   `Comparable`, `Codable`, and conversion back via `money`/`absolute`.
+- First-class `SignedMoney` ergonomics for balance-style code: mixed
+  `Money`/`SignedMoney` `+`/`-` operators (a signed operand promotes the
+  result to `SignedMoney`), `SignedMoney.zero(_:)`, prefix `-` on `Money`
+  returning `SignedMoney`, locale-aware `SignedMoney.formatted(locale:)`,
+  machine-parseable `SignedMoney.numericString`, and `sum(in:)` on
+  sequences of `Money` and `SignedMoney`.
+- `SignedMoney.description` now delegates to `formatted` (like
+  `Money.description`), so the formatter places the negative sign per
+  locale instead of a hardcoded leading hyphen.
 - Initial release of MoneyKit
 - `Money` value type with integer-based smallest unit representation
 - `Currency` type with ISO 4217 support

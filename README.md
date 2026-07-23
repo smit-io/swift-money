@@ -13,7 +13,7 @@ A type-safe Swift library for representing and manipulating monetary values with
 - 🛡️ **Overflow Protection**: Built-in overflow detection for all arithmetic operations
 - 🌐 **Localization**: Automatic currency formatting based on locale
 - 📊 **Rich API**: Arithmetic operations, splitting, allocation, and percentage calculations
-- ✅ **Well Tested**: Comprehensive test suite with 122 tests
+- ✅ **Well Tested**: Comprehensive test suite with 131 tests
 
 ## Requirements
 
@@ -262,6 +262,45 @@ let allocation = try total.allocate(by: [70, 30])
 let shares = try total.allocate(by: [1, 2, 3])
 // Distributes proportionally: ~17%, ~33%, ~50%
 ```
+
+### Signed Arithmetic (SignedMoney)
+
+`Money` is non-negative by design — right for prices, charges, and payment
+APIs. For values that legitimately go below zero (bank balances, budget nets,
+refund deltas), use `SignedMoney`: a sign plus a `Money` magnitude. Mixing the
+two in `+`/`-` promotes the result to `SignedMoney`, so balance code reads
+naturally:
+
+```swift
+// Bank account: $20 in, $30 spent -> -$10
+var balance = SignedMoney.zero(.USD)
+balance = try balance + Money(amount: 2000, currency: .USD)
+balance = try balance - Money(amount: 3000, currency: .USD)
+
+balance.amount        // -1000
+balance.isNegative    // true
+balance.formatted(locale: Locale(identifier: "en_US"))  // "-$10.00"
+
+// Budget: net income and expenses
+let entries: [SignedMoney] = [
+    try Money(amount: 500_000, currency: .USD).signed,  // salary
+    try -Money(amount: 180_000, currency: .USD),        // rent (prefix - flips into SignedMoney)
+    try -Money(amount: 65_000, currency: .USD),         // groceries
+]
+let net = try entries.sum(in: .USD)  // SignedMoney(255_000), sign preserved
+
+// Subtraction that may go negative, straight from Money
+let diff = try Money(amount: 100, currency: .USD)
+    .minus(try Money(amount: 500, currency: .USD))  // SignedMoney(-400)
+
+// Back to Money once the sign is resolved
+net.money        // Money(255_000) — net is positive
+balance.money    // nil — the -$10 balance has no non-negative Money form
+let magnitude = balance.absolute  // Money(1000), drops the sign
+```
+
+Sequences of plain `Money` also sum directly: `try expenses.sum(in: .USD)`
+(the explicit currency defines the empty-sequence result).
 
 ### Formatting & Display
 
@@ -622,7 +661,7 @@ swift test
 ```
 
 Test coverage:
-- ✅ 122 tests across 6 test suites
+- ✅ 131 tests across 6 test suites
 - ✅ Currency validation and equality
 - ✅ Money arithmetic and overflow detection
 - ✅ Rounding modes and calculations

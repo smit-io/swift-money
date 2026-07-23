@@ -34,7 +34,7 @@ struct SignedMoneyTests {
         let money = try Money(amount: 1999, currency: .USD)
         let signed = money.signed
 
-        #expect(!signed.isNegative)
+        #expect(signed.isNegative == false)
         #expect(signed.amount == 1999)
         #expect(signed.money == money)
     }
@@ -48,7 +48,7 @@ struct SignedMoneyTests {
         #expect(-negated == value)
 
         let zero = try SignedMoney(amount: 0, currency: .USD)
-        #expect(!(-zero).isNegative)
+        #expect((-zero).isNegative == false)
         #expect(-zero == zero)
     }
 
@@ -59,13 +59,13 @@ struct SignedMoneyTests {
         (-500, -300, -800),
         (500, -500, 0),
     ])
-    func addition(pair: (Int, Int, Int)) throws {
-        let lhs = try SignedMoney(amount: pair.0, currency: .USD)
-        let rhs = try SignedMoney(amount: pair.1, currency: .USD)
+    func addition(pair: (lhs: Int, rhs: Int, expected: Int)) throws {
+        let lhs = try SignedMoney(amount: pair.lhs, currency: .USD)
+        let rhs = try SignedMoney(amount: pair.rhs, currency: .USD)
 
         let sum = try lhs + rhs
 
-        #expect(sum.amount == pair.2)
+        #expect(sum.amount == pair.expected)
     }
 
     @Test("subtraction never throws on negative results")
@@ -152,12 +152,12 @@ struct SignedMoneyTests {
     @Test("decoding rejects Int.min amounts and invalid currency codes")
     func codableFailurePaths() throws {
         let intMin = Data(#"{"amount":-9223372036854775808,"currencyCode":"USD"}"#.utf8)
-        #expect(throws: (any Error).self) {
+        #expect(throws: MoneyError.self) {
             try JSONDecoder().decode(SignedMoney.self, from: intMin)
         }
 
         let badCode = Data(#"{"amount":100,"currencyCode":"US"}"#.utf8)
-        #expect(throws: (any Error).self) {
+        #expect(throws: CurrencyError.self) {
             try JSONDecoder().decode(SignedMoney.self, from: badCode)
         }
     }
@@ -169,7 +169,7 @@ struct SignedMoneyTests {
         let net = try money.minus(money)
 
         #expect(net.isZero)
-        #expect(!net.isNegative)
+        #expect(net.isNegative == false)
         #expect(net == (try SignedMoney(amount: 0, currency: .USD)))
     }
 
@@ -177,9 +177,9 @@ struct SignedMoneyTests {
     func zeroNormalization() throws {
         let negativeZero = try SignedMoney(amount: 0, currency: .USD)
 
-        #expect(!negativeZero.isNegative)
+        #expect(negativeZero.isNegative == false)
         #expect(negativeZero.isZero)
-        #expect(!negativeZero.isPositive)
+        #expect(negativeZero.isPositive == false)
     }
 
     @Test("Comparable orders across signs")
@@ -204,19 +204,132 @@ struct SignedMoneyTests {
         #expect(decoded.amount == -1999)
     }
 
-    @Test("description carries the sign")
-    func description() throws {
-        let negative = try SignedMoney(amount: -1999, currency: .USD)
-        let positive = try SignedMoney(amount: 1999, currency: .USD)
-
-        #expect(negative.description == "-\(positive.magnitude.description)")
-        #expect(positive.description == positive.magnitude.description)
-    }
-
     @Test("decimalAmount carries the sign")
     func decimalAmount() throws {
         let value = try SignedMoney(amount: -1999, currency: .USD)
 
         #expect(value.decimalAmount == Decimal(string: "-19.99"))
+    }
+
+    // MARK: - Mixed Money/SignedMoney arithmetic
+
+    @Test("zero is a signed zero in the given currency")
+    func zeroFactory() throws {
+        let zero = SignedMoney.zero(.USD)
+
+        #expect(zero.isZero)
+        #expect(zero.isNegative == false)
+        #expect(zero.currency == .USD)
+        #expect(try zero + SignedMoney(amount: -100, currency: .USD)
+            == SignedMoney(amount: -100, currency: .USD))
+    }
+
+    @Test("mixed operators promote to SignedMoney")
+    func mixedOperators() throws {
+        let balance = try SignedMoney(amount: -1000, currency: .USD)
+        let deposit = try Money(amount: 3000, currency: .USD)
+
+        #expect(try (balance + deposit).amount == 2000)
+        #expect(try (balance - deposit).amount == -4000)
+        #expect(try (deposit + balance).amount == 2000)
+        #expect(try (deposit - balance).amount == 4000)
+    }
+
+    @Test("mixed operators throw on currency mismatch")
+    func mixedOperatorsCurrencyMismatch() throws {
+        let usd = try SignedMoney(amount: 100, currency: .USD)
+        let eur = try Money(amount: 100, currency: .EUR)
+
+        #expect(throws: MoneyError.self) { try usd + eur }
+        #expect(throws: MoneyError.self) { try usd - eur }
+        #expect(throws: MoneyError.self) { try eur + usd }
+        #expect(throws: MoneyError.self) { try eur - usd }
+    }
+
+    @Test("prefix minus on Money yields negative SignedMoney; zero stays zero")
+    func prefixMinusOnMoney() throws {
+        let expense = try Money(amount: 3000, currency: .USD)
+        let negated = -expense
+
+        #expect(negated.isNegative)
+        #expect(negated.amount == -3000)
+
+        let zero = try Money(amount: 0, currency: .USD)
+        #expect((-zero).isNegative == false)
+        #expect((-zero).isZero)
+    }
+
+    @Test("bank account balance goes negative naturally")
+    func bankAccountWalkthrough() throws {
+        var balance = SignedMoney.zero(.USD)
+        balance = try balance + Money(amount: 2000, currency: .USD)  // +$20
+        balance = try balance - Money(amount: 3000, currency: .USD)  // -$30
+
+        #expect(balance.amount == -1000)  // -$10.00
+        #expect(balance.isNegative)
+        #expect(balance.money == nil)
+    }
+
+    // MARK: - Summation
+
+    @Test("Money sum totals a sequence and defines the empty case")
+    func moneySum() throws {
+        let expenses = [
+            try Money(amount: 1000, currency: .USD),
+            try Money(amount: 2500, currency: .USD),
+        ]
+
+        #expect(try expenses.sum(in: .USD).amount == 3500)
+        #expect(try [Money]().sum(in: .USD).isZero)
+        #expect(throws: MoneyError.self) {
+            try expenses.sum(in: .EUR)
+        }
+    }
+
+    @Test("SignedMoney sum nets income against expenses")
+    func signedSum() throws {
+        let entries = [
+            try SignedMoney(amount: 5000, currency: .USD),   // income
+            try SignedMoney(amount: -3000, currency: .USD),  // rent
+            try SignedMoney(amount: -2500, currency: .USD),  // groceries
+        ]
+
+        #expect(try entries.sum(in: .USD).amount == -500)
+        #expect(try [SignedMoney]().sum(in: .USD).isZero)
+        #expect(throws: MoneyError.self) {
+            try entries.sum(in: .EUR)
+        }
+    }
+
+    // MARK: - Formatting
+
+    @Test("formatted carries a negative indicator and the magnitude")
+    func formattedNegative() throws {
+        let value = try SignedMoney(amount: -1999, currency: .USD)
+
+        // Loose matching on purpose: exact NumberFormatter output differs
+        // across ICU versions and corelibs-foundation on Linux CI.
+        let negativeSigns = ["-", "\u{2212}", "("]  // hyphen, minus sign, accounting
+        let us = value.formatted(locale: Locale(identifier: "en_US"))
+        #expect(us.contains("19"))
+        #expect(negativeSigns.contains { us.contains($0) })
+
+        let de = value.formatted(locale: Locale(identifier: "de_DE"))
+        #expect(de.contains("19"))
+        #expect(negativeSigns.contains { de.contains($0) })
+    }
+
+    @Test("description delegates to formatted")
+    func descriptionMatchesFormatted() throws {
+        let value = try SignedMoney(amount: -1999, currency: .USD)
+
+        #expect(value.description == value.formatted)
+    }
+
+    @Test("numericString is a machine-parseable signed dot-decimal")
+    func numericString() throws {
+        #expect(try SignedMoney(amount: -1999, currency: .USD).numericString == "-19.99")
+        #expect(try SignedMoney(amount: 1999, currency: .USD).numericString == "19.99")
+        #expect(SignedMoney.zero(.JPY).numericString == "0")
     }
 }

@@ -74,6 +74,13 @@ public struct SignedMoney: Sendable, Hashable {
     public var isPositive: Bool {
         !isNegative && !magnitude.isZero
     }
+
+    /// A zero value in the given currency — the natural starting point for
+    /// running balances.
+    public static func zero(_ currency: Currency) -> SignedMoney {
+        // Zero can never violate Money's non-negative invariant.
+        SignedMoney(try! Money(amount: 0, currency: currency))
+    }
 }
 
 // MARK: - Arithmetic
@@ -141,6 +148,53 @@ extension SignedMoney {
     }
 }
 
+// MARK: - Mixed Money/SignedMoney Arithmetic
+
+// Promotion rule: once a signed value enters an expression, the result stays
+// signed. Lets balance-style code read naturally: `balance = try balance - rent`.
+extension SignedMoney {
+    /// Adds a `Money` value to a signed value.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.amountOverflow` if the sum overflows.
+    public static func + (lhs: SignedMoney, rhs: Money) throws -> SignedMoney {
+        try lhs + rhs.signed
+    }
+
+    /// Subtracts a `Money` value from a signed value.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.amountOverflow` if the difference overflows.
+    public static func - (lhs: SignedMoney, rhs: Money) throws -> SignedMoney {
+        try lhs - rhs.signed
+    }
+
+    /// Adds a signed value to a `Money` value.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.amountOverflow` if the sum overflows.
+    public static func + (lhs: Money, rhs: SignedMoney) throws -> SignedMoney {
+        try lhs.signed + rhs
+    }
+
+    /// Subtracts a signed value from a `Money` value.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.amountOverflow` if the difference overflows.
+    public static func - (lhs: Money, rhs: SignedMoney) throws -> SignedMoney {
+        try lhs.signed - rhs
+    }
+
+}
+
+// The remaining bridge, `prefix -(Money) -> SignedMoney`, lives in
+// Money+Arithmetic.swift: a member operator must take its enclosing type as
+// an argument, so it cannot be declared in this extension.
+
 // MARK: - Comparable
 
 extension SignedMoney: Comparable {
@@ -156,11 +210,34 @@ extension SignedMoney: Comparable {
     }
 }
 
+// MARK: - Formatting
+
+extension SignedMoney {
+    /// Returns a locale-aware formatted string, letting the formatter place
+    /// the negative sign (e.g. "-$10.00", "-10,00 €").
+    public var formatted: String {
+        formatted(locale: .current)
+    }
+
+    /// Returns a formatted string using a specific locale.
+    public func formatted(locale: Locale) -> String {
+        Money.formatCurrency(decimalAmount, currency: currency, locale: locale)
+    }
+
+    /// Returns a numeric string representation without currency symbols,
+    /// pinned to a machine-parseable dot-decimal format on every host locale.
+    ///
+    /// Example: "-19.99" for -$19.99
+    public var numericString: String {
+        Money.formatNumeric(decimalAmount, currency: currency)
+    }
+}
+
 // MARK: - CustomStringConvertible
 
 extension SignedMoney: CustomStringConvertible {
     public var description: String {
-        isNegative ? "-\(magnitude.description)" : magnitude.description
+        formatted
     }
 }
 

@@ -244,6 +244,14 @@ extension Money {
         SignedMoney(self)
     }
 
+    /// Negates a Money value into a `SignedMoney`, so `-expense` reads the
+    /// way ledgers do. Zero stays zero. (Lives here, not with the mixed
+    /// operators in SignedMoney.swift, because a member operator must take
+    /// its enclosing type as an argument.)
+    public static prefix func - (value: Money) -> SignedMoney {
+        -value.signed
+    }
+
     /// Subtracts another Money value, allowing a negative result.
     ///
     /// Unlike `-`, this never throws `MoneyError.negativeAmount` — the sign
@@ -256,6 +264,32 @@ extension Money {
         }
 
         return try SignedMoney(amount: amount - other.amount, currency: currency)
+    }
+}
+
+// MARK: - Summation
+
+extension Sequence where Element == Money {
+    /// Sums a sequence of Money values. The explicit currency defines the
+    /// result for an empty sequence.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.currencyMismatch` if any element differs from `currency`.
+    ///   - `MoneyError.amountOverflow` if the running total overflows.
+    public func sum(in currency: Currency) throws -> Money {
+        try reduce(Money(amount: 0, currency: currency), +)
+    }
+}
+
+extension Sequence where Element == SignedMoney {
+    /// Sums a sequence of SignedMoney values. The explicit currency defines
+    /// the result for an empty sequence.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.currencyMismatch` if any element differs from `currency`.
+    ///   - `MoneyError.amountOverflow` if the running total overflows.
+    public func sum(in currency: Currency) throws -> SignedMoney {
+        try reduce(SignedMoney.zero(currency), +)
     }
 }
 
