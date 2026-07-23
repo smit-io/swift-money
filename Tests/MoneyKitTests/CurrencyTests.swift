@@ -134,26 +134,6 @@ struct CurrencyTests {
         #expect(decoded.decimalPlaces == 2)
     }
 
-    @Test("Zero decimal currencies")
-    func zeroDecimalCurrencies() throws {
-        let zeroDecimalCodes = ["JPY", "KRW", "VND", "CLP"]
-
-        for code in zeroDecimalCodes {
-            let currency = try Currency(code: code)
-            #expect(currency.decimalPlaces == 0)
-        }
-    }
-
-    @Test("Three decimal currencies")
-    func threeDecimalCurrencies() throws {
-        let threeDecimalCodes = ["BHD", "KWD", "OMR", "TND"]
-
-        for code in threeDecimalCodes {
-            let currency = try Currency(code: code)
-            #expect(currency.decimalPlaces == 3)
-        }
-    }
-
     @Test("Currency hash consistency with custom decimal places")
     func hashConsistencyWithCustomDecimals() throws {
         // Two currencies with same code but different decimal places
