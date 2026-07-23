@@ -5,7 +5,7 @@ A type-safe Swift library for representing and manipulating monetary values with
 ## Features
 
 - 💰 **Integer-based Representation**: Stores amounts as integers in the smallest currency unit (cents, pence, yen, etc.)
-- 🌍 **ISO 4217 Support**: Built-in support for standard currency codes with correct decimal places
+- 🌍 **ISO 4217 Support**: Decimal places for 165 currency codes generated straight from the official ISO 4217 registry (SIX Financial Services)
 - 🔒 **Type Safety**: Prevents mixing different currencies and negative amounts at compile time
 - ⚡ **Swift Concurrency**: Full `Sendable` conformance for safe concurrent usage
 - 🧮 **Precise Arithmetic**: Uses `Decimal` internally to avoid floating-point precision issues
@@ -13,7 +13,7 @@ A type-safe Swift library for representing and manipulating monetary values with
 - 🛡️ **Overflow Protection**: Built-in overflow detection for all arithmetic operations
 - 🌐 **Localization**: Automatic currency formatting based on locale
 - 📊 **Rich API**: Arithmetic operations, splitting, allocation, and percentage calculations
-- ✅ **Well Tested**: Comprehensive test suite with 102 tests
+- ✅ **Well Tested**: Comprehensive test suite with 103 tests
 
 ## Requirements
 
@@ -28,7 +28,7 @@ Add MoneyKit to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/1amageek/swift-money.git", from: "1.0.0")
+    .package(url: "https://github.com/smit-io/swift-money.git", from: "1.3.1")
 ]
 ```
 
@@ -95,7 +95,7 @@ let eur = try Money(amount: 5000, currencyCode: "EUR")
 
 ### Currency Support
 
-MoneyKit includes built-in support for ISO 4217 currencies with automatic decimal place detection:
+MoneyKit includes built-in support for ISO 4217 currencies with automatic decimal place detection. The decimal places are not hand-maintained: they are generated from the official ISO 4217 registry published by SIX Financial Services (see `Scripts/generate_iso4217.py`, which re-downloads the registry on each run and regenerates the table only when SIX publishes a change). Registry rows with no applicable minor unit (XAU, XDR, XXX, test codes) fall back to a lenient 2-decimal default and report `isISO == false`.
 
 ```swift
 // Standard currencies (2 decimal places)
@@ -586,7 +586,9 @@ print(yen.formatted)  // "¥1,000"
 let yen2 = try Money(decimalAmount: 5000, currency: .JPY)  // ¥5,000
 ```
 
-Supported zero-decimal currencies: **BIF, CLP, DJF, GNF, JPY, KMF, KRW, MGA, PYG, RWF, UGX, VND, VUV, XAF, XOF, XPF**
+Zero-decimal currencies (per the ISO 4217 registry): **BIF, CLP, DJF, GNF, ISK, JPY, KMF, KRW, PYG, RWF, UGX, UYI, VND, VUV, XAF, XOF, XPF**
+
+> Note: MGA (Malagasy ariary) is a 2-decimal currency in the registry, despite being listed as zero-decimal by some payment providers.
 
 ## Three-Decimal Currencies
 
@@ -601,7 +603,9 @@ print(dinar.formatted)  // "KD 1.234" (depending on locale)
 let fils = try Money(amount: 1, currency: .KWD)  // KD 0.001
 ```
 
-Supported three-decimal currencies: **BHD, IQD, JOD, KWD, LYD, OMR, TND**
+Three-decimal currencies (per the ISO 4217 registry): **BHD, IQD, JOD, KWD, LYD, OMR, TND**
+
+Two currencies use 4 decimal places: **CLF** (Unidad de Fomento) and **UYW** (Unidad Previsional).
 
 ## Performance Considerations
 
@@ -618,12 +622,24 @@ swift test
 ```
 
 Test coverage:
-- ✅ 102 tests across 4 test suites
+- ✅ 103 tests across 5 test suites
 - ✅ Currency validation and equality
 - ✅ Money arithmetic and overflow detection
 - ✅ Rounding modes and calculations
 - ✅ Distribution and allocation
+- ✅ ISO 4217 table snapshot verified against the checked-in registry XML
 - ✅ Edge cases and error handling
+
+### Updating the ISO 4217 registry
+
+```bash
+python3 Scripts/generate_iso4217.py
+```
+
+The script downloads the latest registry from SIX Financial Services, updates
+`Resources/iso4217/list-one.xml` only if the published content changed, and
+regenerates `Sources/MoneyKit/Currency+ISO4217.generated.swift`. It falls back
+to the committed registry copy when offline.
 
 ## Contributing
 
