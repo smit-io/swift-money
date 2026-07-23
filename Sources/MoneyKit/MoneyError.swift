@@ -41,12 +41,17 @@ public enum CurrencyError: LocalizedError, Sendable {
     /// The currency is not recognized in the system.
     case unknownCurrency(String)
 
+    /// The decimal places value is outside the supported range.
+    case invalidDecimalPlaces(Int)
+
     public var errorDescription: String? {
         switch self {
         case .invalidFormat(let code):
             return "Invalid currency format: '\(code)'. Expected 3 uppercase letters."
         case .unknownCurrency(let code):
             return "Unknown currency: '\(code)'."
+        case .invalidDecimalPlaces(let places):
+            return "Invalid decimal places: \(places). Expected 0...30."
         }
     }
 }
