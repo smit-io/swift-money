@@ -5,6 +5,16 @@ All notable changes to MoneyKit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-07-23
+
+### Changed
+- `Scripts/generate_iso4217.py` now downloads the ISO 4217 registry from SIX
+  on every run and updates `Resources/iso4217/list-one.xml` only when the
+  published content changed. The response is validated before the committed
+  copy is overwritten (an HTML error page or truncated download never
+  clobbers the registry), and the script falls back to the committed copy
+  when offline. Tooling-only change; the library itself is unaffected.
+
 ## [1.3.0] - 2026-07-23
 
 ### Changed
