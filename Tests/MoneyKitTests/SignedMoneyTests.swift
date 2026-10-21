@@ -301,6 +301,79 @@ struct SignedMoneyTests {
         }
     }
 
+    // MARK: - Allocation
+
+    @Test("Allocation of a negative value gives negative parts that sum exactly")
+    func allocateNegative() throws {
+        let total = try SignedMoney(amount: -10000, currency: .USD)
+        let parts = try total.allocate(by: [1, 1, 1])
+
+        #expect(parts.map(\.amount) == [-3334, -3333, -3333])
+        #expect(try parts.sum(in: .USD) == total)
+    }
+
+    @Test("Allocation of a positive value matches Money.allocate")
+    func allocatePositiveMatchesMoney() throws {
+        let money = try Money(amount: 120_000, currency: .USD)
+        let days = [16, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31, 15]
+
+        let signed = try money.signed.allocate(by: days)
+
+        #expect(signed.map(\.amount) == (try money.allocate(by: days)).map(\.amount))
+        #expect(signed.allSatisfy { !$0.isNegative })
+    }
+
+    @Test("Allocation gives a zero ratio zero, never negative zero")
+    func allocateNegativeZeroRatio() throws {
+        let total = try SignedMoney(amount: -5, currency: .USD)
+        let parts = try total.allocate(by: [0, 1, 1])
+
+        #expect(parts.map(\.amount) == [0, -3, -2])
+        #expect(!parts[0].isNegative)
+        #expect(parts[0] == SignedMoney.zero(.USD))
+    }
+
+    @Test("Allocation of zero gives zero parts, none negative")
+    func allocateZero() throws {
+        let parts = try SignedMoney.zero(.USD).allocate(by: [2, 1])
+
+        #expect(parts.map(\.amount) == [0, 0])
+        #expect(parts.allSatisfy { !$0.isNegative })
+    }
+
+    @Test("Allocation keeps the currency and sums exactly", arguments: [
+        ("USD", -10001, [70, 30]),
+        ("JPY", -1001, [1, 2, 3]),
+        ("KWD", -1000, [3, 0, 4]),
+        ("USD", 9999, [1, 1, 1, 1]),
+    ])
+    func allocateSumsExactly(code: String, amount: Int, ratios: [Int]) throws {
+        let currency = try Currency(code: code)
+        let total = try SignedMoney(amount: amount, currency: currency)
+        let parts = try total.allocate(by: ratios)
+
+        #expect(parts.count == ratios.count)
+        #expect(parts.allSatisfy { $0.currency == currency })
+        #expect(try parts.sum(in: currency) == total)
+    }
+
+    @Test("Splitting a part again still sums to the original")
+    func allocateNested() throws {
+        let total = try SignedMoney(amount: -10000, currency: .USD)
+        let first = try total.allocate(by: [1, 2])
+        let nested = try first[1].allocate(by: [1, 1, 1])
+
+        #expect(try (nested + [first[0]]).sum(in: .USD) == total)
+    }
+
+    @Test("Allocation with empty or all-zero ratios throws")
+    func allocateInvalidRatios() throws {
+        let total = try SignedMoney(amount: -100, currency: .USD)
+
+        #expect(throws: MoneyError.self) { try total.allocate(by: []) }
+        #expect(throws: MoneyError.self) { try total.allocate(by: [0, 0]) }
+    }
+
     // MARK: - Formatting
 
     @Test("formatted carries a negative indicator and the magnitude")

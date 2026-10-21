@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returning `SignedMoney`, locale-aware `SignedMoney.formatted(locale:)`,
   machine-parseable `SignedMoney.numericString`, and `sum(in:)` on
   sequences of `Money` and `SignedMoney`.
+- `SignedMoney.allocate(by:)`: splits the magnitude with `Money.allocate(by:)`
+  and gives every part the value's sign, so a negative value splits into
+  negative parts that add up exactly (-$100.00 by `[1, 1, 1]` gives -$33.34,
+  -$33.33, -$33.33).
 
 ### Fixed
 - `Money.allocate(by:)` no longer gives a leftover smallest unit to a zero

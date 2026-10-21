@@ -13,7 +13,7 @@ A type-safe Swift library for representing and manipulating monetary values with
 - 🛡️ **Overflow Protection**: Built-in overflow detection for all arithmetic operations
 - 🌐 **Localization**: Automatic currency formatting based on locale
 - 📊 **Rich API**: Arithmetic operations, splitting, allocation, and percentage calculations
-- ✅ **Well Tested**: Comprehensive test suite with 134 tests
+- ✅ **Well Tested**: Comprehensive test suite with 141 tests
 
 ## Requirements
 
@@ -261,6 +261,15 @@ let allocation = try total.allocate(by: [70, 30])
 // Complex ratios
 let shares = try total.allocate(by: [1, 2, 3])
 // Distributes proportionally: ~17%, ~33%, ~50%
+
+// A zero ratio always gets zero
+let withZero = try Money(amount: 5, currency: .USD).allocate(by: [0, 1, 1])
+// [Money(0), Money(3), Money(2)]
+
+// Signed values split by magnitude; every part takes the sign
+let refund = try SignedMoney(amount: -10000, currency: .USD)
+let refundParts = try refund.allocate(by: [1, 1, 1])
+// [-3334, -3333, -3333] - sums to -10000
 ```
 
 ### Signed Arithmetic (SignedMoney)
@@ -661,7 +670,7 @@ swift test
 ```
 
 Test coverage:
-- ✅ 134 tests across 6 test suites
+- ✅ 141 tests across 6 test suites
 - ✅ Currency validation and equality
 - ✅ Money arithmetic and overflow detection
 - ✅ Rounding modes and calculations

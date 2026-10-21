@@ -148,6 +148,24 @@ extension SignedMoney {
     }
 }
 
+// MARK: - Allocation
+
+extension SignedMoney {
+    /// Allocates this value according to ratios, keeping the exact sum.
+    ///
+    /// The magnitude is split with `Money.allocate(by:)` and every part takes
+    /// this value's sign, so the parts always add up to this value: -$100.00
+    /// by `[1, 1, 1]` gives -$33.34, -$33.33, -$33.33. A zero ratio always
+    /// receives zero, which is never negative.
+    ///
+    /// - Parameter ratios: An array of non-negative integers representing the allocation ratios.
+    /// - Returns: The parts, in the order of `ratios`.
+    /// - Throws: `MoneyError.divisionByZero` if ratios is empty or contains only zeros.
+    public func allocate(by ratios: [Int]) throws -> [SignedMoney] {
+        try magnitude.allocate(by: ratios).map { isNegative ? -$0 : $0.signed }
+    }
+}
+
 // MARK: - Mixed Money/SignedMoney Arithmetic
 
 // Promotion rule: once a signed value enters an expression, the result stays
