@@ -31,6 +31,19 @@ public struct BigMoney: Sendable, Hashable {
         self.currency = currency
     }
 
+    /// Creates a BigMoney value from a `Double` in standard units, converted
+    /// through its shortest text (so `12.34` is exactly 12.34).
+    ///
+    /// - Throws: `MoneyError.invalidDecimal` for NaN, infinity, or an out-of-range value.
+    public init(amount: Double, currency: Currency) throws {
+        self.init(amount: try Decimal(shortestRepresentationOf: amount), currency: currency)
+    }
+
+    /// Creates a BigMoney value from a whole number of standard units.
+    public init(amount: Int, currency: Currency) {
+        self.init(amount: Decimal(amount), currency: currency)
+    }
+
     /// A zero amount in the given currency.
     public static func zero(_ currency: Currency) -> BigMoney {
         BigMoney(amount: 0, currency: currency)
@@ -117,6 +130,35 @@ extension BigMoney {
             throw MoneyError.divisionByZero
         }
         return BigMoney(amount: lhs.amount / rhs, currency: lhs.currency)
+    }
+
+    /// Multiplies by a `Double`, converted through its shortest text (so
+    /// `1.1` is exactly 1.1). Never rounds.
+    ///
+    /// - Throws: `MoneyError.invalidDecimal` for NaN, infinity, or an out-of-range multiplier.
+    public static func * (lhs: BigMoney, rhs: Double) throws -> BigMoney {
+        lhs * (try Decimal(shortestRepresentationOf: rhs))
+    }
+
+    /// Multiplies by an integer. Never rounds.
+    public static func * (lhs: BigMoney, rhs: Int) -> BigMoney {
+        lhs * Decimal(rhs)
+    }
+
+    /// Divides by a `Double`, converted through its shortest text.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.invalidDecimal` for NaN, infinity, or an out-of-range divisor.
+    ///   - `MoneyError.divisionByZero` if the divisor is zero.
+    public static func / (lhs: BigMoney, rhs: Double) throws -> BigMoney {
+        try lhs / Decimal(shortestRepresentationOf: rhs)
+    }
+
+    /// Divides by an integer.
+    ///
+    /// - Throws: `MoneyError.divisionByZero` if the divisor is zero.
+    public static func / (lhs: BigMoney, rhs: Int) throws -> BigMoney {
+        try lhs / Decimal(rhs)
     }
 
     /// Negates the value.

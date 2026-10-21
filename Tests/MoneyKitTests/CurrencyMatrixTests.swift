@@ -127,6 +127,24 @@ struct CurrencyMatrixTests {
         }
     }
 
+    @Test("Double rates and amounts are exact at every scale", arguments: currencies)
+    func doubleArguments(currency: Currency) throws {
+        let money = try Money(amount: 100, currency: currency)
+
+        // 100 minor units × 0.07 is exactly 7: no mode may round it to 8.
+        #expect(try money.multiplied(by: 0.07, rounding: .up).amount == 7)
+        #expect(try money.multiplied(by: 0.07, rounding: .awayFromZero).amount == 7)
+        #expect(try (money.toBigMoney() * 0.07).rounded(.up).amount == 7)
+        #expect(try money.divided(by: 0.25, rounding: .up).amount == 400)
+
+        // 0.07 standard units is a whole number of minor units at 2+ places.
+        if currency.decimalPlaces >= 2 {
+            let expected = 7 * Int(truncating: pow(10, currency.decimalPlaces - 2) as NSDecimalNumber)
+            #expect(try Money(decimalAmount: 0.07, currency: currency, rounding: .up).amount == expected)
+            #expect(try Money(decimalAmount: 0.07, currency: currency, rounding: .down).amount == expected)
+        }
+    }
+
     // MARK: - Money: splitting and summation
 
     @Test("allocate and distribute sum exactly for either sign", arguments: currencies)

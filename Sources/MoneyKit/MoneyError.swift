@@ -19,6 +19,9 @@ public enum MoneyError: LocalizedError, Sendable {
     /// Amount overflow occurred during calculation.
     case amountOverflow(description: String)
 
+    /// A `Double` has no `Decimal` value: NaN, infinity, or out of `Decimal`'s range.
+    case invalidDecimal(Double)
+
     public var errorDescription: String? {
         switch self {
         case .invalidCurrencyCode(let code):
@@ -31,6 +34,8 @@ public enum MoneyError: LocalizedError, Sendable {
             return "Division by zero is not allowed."
         case .amountOverflow(let description):
             return "Amount overflow: \(description)"
+        case .invalidDecimal(let value):
+            return "Invalid decimal: \(value) has no Decimal representation."
         }
     }
 }

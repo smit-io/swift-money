@@ -152,8 +152,20 @@ let third = try price.divided(by: 3, rounding: .halfUp)       // ¥411
 let fromDecimal = try Money(decimalAmount: 19.99, currency: .USD, rounding: .halfUp)
 ```
 
-Prefer `Decimal` literals or `Decimal(string:)` for rates. `Decimal(someDouble)`
-carries the `Double`'s binary error: `Decimal(19.99)` is `19.98999999999999488`.
+Rates and amounts can be `Double`, `Int`, or `Decimal`. A `Double` is converted
+through its shortest text, like joda-money's `BigDecimal.valueOf(double)`, so
+`0.07` is exactly 0.07. Watch for one trap: a `Decimal` *literal* goes through
+`Double` first and keeps the binary error, so `let rate: Decimal = 0.07` is
+`0.07000000000000001024`. Pass the literal straight in, or use
+`Decimal(string: "0.07")`:
+
+```swift
+let money = try Money(amount: 100, currency: .JPY)
+try money.multiplied(by: 0.07, rounding: .up)  // ¥7, exact
+
+let rate: Decimal = 0.07                        // 0.07000000000000001024
+try money.multiplied(by: rate, rounding: .up)  // ¥8, wrong
+```
 
 ### Chained Calculations with BigMoney
 
@@ -173,7 +185,7 @@ let once = try (price.toBigMoney() * 0.8 * 1.1).rounded(.down)  // ¥1085 (1085.
 ```
 
 `BigMoney` supports `+` / `-` with `BigMoney` or `Money`, `*` / `/` by
-`Decimal`, prefix `-`, `abs()`, `isZero` / `isPositive` / `isNegative`,
+`Decimal`, `Double`, or `Int`, prefix `-`, `abs()`, `isZero` / `isPositive` / `isNegative`,
 `Comparable`, `tryCompare(_:)`, and `sum(in:)`.
 
 ### Rounding Modes

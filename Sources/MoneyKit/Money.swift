@@ -77,6 +77,30 @@ public struct Money: Sendable, Hashable, Codable {
         self.init(unchecked: Int(NSDecimalNumber(decimal: rounded).int64Value), currency: currency)
     }
 
+    /// Creates a Money value from a `Double` in standard units, converted
+    /// through its shortest text (so `19.99` is exactly 19.99), then rounded
+    /// to the currency's decimal places.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.invalidDecimal` for NaN, infinity, or an out-of-range value.
+    ///   - `MoneyError.amountOverflow` if the rounded amount is outside `-Int.max...Int.max`.
+    public init(decimalAmount: Double, currency: Currency, rounding: RoundingMode) throws {
+        try self.init(
+            decimalAmount: Decimal(shortestRepresentationOf: decimalAmount),
+            currency: currency,
+            rounding: rounding
+        )
+    }
+
+    /// Creates a Money value from a whole number of standard units (e.g.,
+    /// 5000 for ¥5,000 or $5,000.00).
+    ///
+    /// - Throws: `MoneyError.amountOverflow` if the amount is outside `-Int.max...Int.max`
+    ///   in minor units.
+    public init(decimalAmount: Int, currency: Currency, rounding: RoundingMode) throws {
+        try self.init(decimalAmount: Decimal(decimalAmount), currency: currency, rounding: rounding)
+    }
+
     /// Skips the `Int.min` check. Callers must guarantee `amount != Int.min`.
     init(unchecked amount: Int, currency: Currency) {
         self.amount = amount

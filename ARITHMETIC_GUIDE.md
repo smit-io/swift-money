@@ -81,9 +81,10 @@ try (one.toBigMoney() * 1.5 * 1.5).rounded(.down)     // ¥2 (2.25)
 ```
 
 `BigMoney` supports `+` / `-` with `BigMoney` or `Money`, `*` and `/` by
-`Decimal`, prefix `-`, `abs()`, `isZero` / `isPositive` / `isNegative`,
-`Comparable`, `tryCompare(_:)`, and `sum(in:)`. Division throws only on a
-zero divisor; precision is `Decimal`'s 38 significant digits.
+`Decimal`, `Double`, or `Int`, prefix `-`, `abs()`, `isZero` / `isPositive` / `isNegative`,
+`Comparable`, `tryCompare(_:)`, and `sum(in:)`. Division throws on a zero
+divisor, and `Double` operands throw `invalidDecimal` for NaN or infinity;
+precision is `Decimal`'s 38 significant digits.
 
 ## Rounding Modes
 
@@ -170,9 +171,11 @@ let total = try? usd + eur  // nil on mismatch
    `rounded(_:)` at the end.
 2. **Document rounding choices.** Tax rules often mandate a mode, e.g.
    Japanese consumption tax rounds down.
-3. **Use `Decimal` literals or `Decimal(string:)` for rates.** A `Decimal`
-   built from a `Double` variable carries binary error:
-   `Decimal(19.99)` is `19.98999999999999488`.
+3. **Pass rates as `Double` or `Int` literals, or `Decimal(string:)`.**
+   A `Double` argument is converted through its shortest text (joda-money's
+   `BigDecimal.valueOf(double)`), so `0.07` is exactly 0.07. A `Decimal`
+   *literal* is not: `let r: Decimal = 0.07` goes through `Double` and is
+   `0.07000000000000001024`, which can round `.up` one unit too far.
 4. **Split with `distribute` / `allocate`**, not division, when the parts must
    add back up to the total.
 

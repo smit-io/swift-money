@@ -94,6 +94,43 @@ extension Money {
         try (toBigMoney() / divisor).rounded(rounding)
     }
 
+    /// Multiplies by a `Double`, converted through its shortest text (so
+    /// `0.07` is exactly 0.07), rounding the result.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.invalidDecimal` for NaN, infinity, or an out-of-range multiplier.
+    ///   - `MoneyError.amountOverflow` if the result is out of range.
+    public func multiplied(by multiplier: Double, rounding: RoundingMode) throws -> Money {
+        try multiplied(by: Decimal(shortestRepresentationOf: multiplier), rounding: rounding)
+    }
+
+    /// Multiplies by an integer, rounding the result. Exact for whole-unit
+    /// results; prefer `*` when no rounding mode is needed.
+    ///
+    /// - Throws: `MoneyError.amountOverflow` if the result is out of range.
+    public func multiplied(by multiplier: Int, rounding: RoundingMode) throws -> Money {
+        try multiplied(by: Decimal(multiplier), rounding: rounding)
+    }
+
+    /// Divides by a `Double`, converted through its shortest text, rounding the result.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.invalidDecimal` for NaN, infinity, or an out-of-range divisor.
+    ///   - `MoneyError.divisionByZero` if the divisor is zero.
+    ///   - `MoneyError.amountOverflow` if the result is out of range.
+    public func divided(by divisor: Double, rounding: RoundingMode) throws -> Money {
+        try divided(by: Decimal(shortestRepresentationOf: divisor), rounding: rounding)
+    }
+
+    /// Divides by an integer, rounding the result.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.divisionByZero` if the divisor is zero.
+    ///   - `MoneyError.amountOverflow` if the result is out of range.
+    public func divided(by divisor: Int, rounding: RoundingMode) throws -> Money {
+        try divided(by: Decimal(divisor), rounding: rounding)
+    }
+
     /// This value as a `BigMoney`, for chained calculations that round once at the end.
     public func toBigMoney() -> BigMoney {
         BigMoney(amount: decimalAmount, currency: currency)

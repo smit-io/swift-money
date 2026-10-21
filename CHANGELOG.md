@@ -30,12 +30,19 @@ joda-money. See the migration table in `ARITHMETIC_GUIDE.md`.
   `isPositiveOrZero`, `isNegativeOrZero`.
 - `Money.multiplied(by:rounding:)` and `divided(by:rounding:)` taking
   `Decimal`, and `toBigMoney()`.
+- `Double` and `Int` overloads of `Money(decimalAmount:currency:rounding:)`,
+  `multiplied(by:rounding:)`, `divided(by:rounding:)`,
+  `BigMoney(amount:currency:)`, and `BigMoney` `*` / `/`. A `Double` is
+  converted through its shortest text, like joda-money's
+  `BigDecimal.valueOf(double)`, so `0.07` is exactly 0.07 (`Decimal(0.07)`
+  is `0.07000000000000001024`). NaN, infinity, and out-of-range values throw
+  the new `MoneyError.invalidDecimal`.
 
 ### Removed
 - **Breaking:** `SignedMoney`, `Money.minus(_:)`, `Money.signed`, and the
   mixed `Money` / `SignedMoney` operators: plain `Money` covers them.
 - **Breaking:** `MoneyCalculation` and the `Double` / `Float` operators
-  that produced it: use `BigMoney`. `Decimal(someDouble)` is lossy.
+  that produced it: use `BigMoney`.
 - **Breaking:** `Money * Decimal` and `Money / Int`, which rounded
   silently: use `multiplied(by:rounding:)` / `divided(by:rounding:)`.
 - **Breaking:** `multiply(by:rounding:)`, `divide(by:rounding:)`,
