@@ -9,24 +9,7 @@ import Testing
 @Suite("Double Conversion Tests")
 struct DoubleConversionTests {
 
-    // MARK: - The bug this fixes
-
-    @Test("A Double rate is exact: 100 × 0.07 rounded up is 7, not 8")
-    func literalRateIsExact() throws {
-        let money = try Money(amount: 100, currency: .JPY)
-
-        #expect(try money.multiplied(by: 0.07, rounding: .up).amount == 7)
-        #expect(try money.multiplied(by: 0.07, rounding: .down).amount == 7)
-        #expect(try (money.toBigMoney() * 0.07).rounded(.up).amount == 7)
-    }
-
-    @Test("A Double amount is exact: 19.99 is 1999 cents under every mode")
-    func literalAmountIsExact() throws {
-        for mode in [RoundingMode.up, .down, .halfUp, .bankers, .towardZero, .awayFromZero] {
-            #expect(try Money(decimalAmount: 19.99, currency: .USD, rounding: mode).amount == 1999)
-        }
-        #expect(try BigMoney(amount: 19.99, currency: .USD).amount == Decimal(string: "19.99"))
-    }
+    // MARK: - Conversion (no currency involved)
 
     @Test("Every 2- and 3-decimal value from 0 to 100 converts exactly")
     func exhaustiveConversion() throws {
@@ -48,56 +31,94 @@ struct DoubleConversionTests {
         #expect(try Decimal(shortestRepresentationOf: value) == Decimal(string: expected))
     }
 
+    // MARK: - The bug this fixes
+
+    @Test("A Double rate is exact: 100 × 0.07 is 7 under every mode", arguments: CurrencyFixture.all, CurrencyFixture.roundingModes)
+    func literalRateIsExact(fixture: CurrencyFixture, mode: RoundingMode) throws {
+        let money = try fixture.money(100)
+
+        #expect(try money.multiplied(by: 0.07, rounding: mode).amount == 7)
+        #expect(try (money.toBigMoney() * 0.07).rounded(mode).amount == 7)
+        #expect(try money.divided(by: 0.25, rounding: mode).amount == 400)
+        #expect(try (money.toBigMoney() / 0.25).rounded(mode).amount == 400)
+    }
+
+    @Test("A Double amount matches the same digits parsed as text", arguments: CurrencyFixture.all, CurrencyFixture.roundingModes)
+    func literalAmountMatchesText(fixture: CurrencyFixture, mode: RoundingMode) throws {
+        // Below 9 standard units, so every value fits Int at 18 decimal places too.
+        for (value, text) in [(0.07, "0.07"), (1.99, "1.99"), (-1.05, "-1.05"), (1.5678, "1.5678"), (0.125, "0.125")] {
+            let viaDouble = try Money(decimalAmount: value, currency: fixture.currency, rounding: mode)
+            let viaText = try Money(decimalAmount: Decimal(string: text)!, currency: fixture.currency, rounding: mode)
+            #expect(viaDouble == viaText, "\(value)")
+
+            #expect(try BigMoney(amount: value, currency: fixture.currency).amount == Decimal(string: text))
+        }
+    }
+
+    @Test("1.99 is exact at every scale with at least 2 places", arguments: CurrencyFixture.all.filter { $0.decimalPlaces >= 2 })
+    func literalAmountIsExact(fixture: CurrencyFixture) throws {
+        let expected = fixture.minorUnitsPerUnit / 100 * 199
+
+        for mode in CurrencyFixture.roundingModes {
+            #expect(try Money(decimalAmount: 1.99, currency: fixture.currency, rounding: mode).amount == expected)
+        }
+    }
+
     // MARK: - Invalid Doubles
 
-    @Test("NaN, infinity, and out-of-range values throw invalidDecimal", arguments: [
-        Double.nan, .infinity, -.infinity, 1e300, 1e-200,
-    ])
-    func invalidDoubles(value: Double) throws {
-        let money = try Money(amount: 100, currency: .USD)
+    @Test("NaN, infinity, and out-of-range values throw invalidDecimal", arguments: CurrencyFixture.all)
+    func invalidDoubles(fixture: CurrencyFixture) throws {
+        let money = try fixture.money(100)
         let big = money.toBigMoney()
 
+        for value in [Double.nan, .infinity, -.infinity, 1e300, 1e-200] {
+            for error in [
+                #expect(throws: MoneyError.self) { try money.multiplied(by: value, rounding: .down) },
+                #expect(throws: MoneyError.self) { try money.divided(by: value, rounding: .down) },
+                #expect(throws: MoneyError.self) { try Money(decimalAmount: value, currency: fixture.currency, rounding: .down) },
+                #expect(throws: MoneyError.self) { try BigMoney(amount: value, currency: fixture.currency) },
+                #expect(throws: MoneyError.self) { try big * value },
+                #expect(throws: MoneyError.self) { try big / value },
+            ] {
+                guard case .invalidDecimal = error else {
+                    Issue.record("Expected invalidDecimal for \(value), got \(String(describing: error))")
+                    continue
+                }
+            }
+        }
+    }
+
+    @Test("Dividing by a Double zero throws divisionByZero", arguments: CurrencyFixture.all)
+    func doubleZeroDivisor(fixture: CurrencyFixture) throws {
+        let money = try fixture.money(100)
+
         for error in [
-            #expect(throws: MoneyError.self) { try money.multiplied(by: value, rounding: .down) },
-            #expect(throws: MoneyError.self) { try money.divided(by: value, rounding: .down) },
-            #expect(throws: MoneyError.self) { try Money(decimalAmount: value, currency: .USD, rounding: .down) },
-            #expect(throws: MoneyError.self) { try BigMoney(amount: value, currency: .USD) },
-            #expect(throws: MoneyError.self) { try big * value },
-            #expect(throws: MoneyError.self) { try big / value },
+            #expect(throws: MoneyError.self) { try money.divided(by: 0.0, rounding: .down) },
+            #expect(throws: MoneyError.self) { try money.toBigMoney() / 0.0 },
         ] {
-            guard case .invalidDecimal = error else {
-                Issue.record("Expected invalidDecimal, got \(String(describing: error))")
+            guard case .divisionByZero = error else {
+                Issue.record("Expected divisionByZero, got \(String(describing: error))")
                 continue
             }
         }
     }
 
-    @Test("Dividing by a Double zero throws divisionByZero")
-    func doubleZeroDivisor() throws {
-        let money = try Money(amount: 100, currency: .USD)
-
-        #expect(throws: MoneyError.self) { try money.divided(by: 0.0, rounding: .down) }
-        #expect(throws: MoneyError.self) { try money.toBigMoney() / 0.0 }
-    }
-
     // MARK: - Overload selection
 
-    @Test("Integer literals pick the Int overloads")
-    func integerOverloads() throws {
-        let money = try Money(amount: 1000, currency: .JPY)
+    @Test("Integer literals pick the Int overloads", arguments: CurrencyFixture.all)
+    func integerOverloads(fixture: CurrencyFixture) throws {
+        let money = try fixture.money(1000)
 
         #expect(try money.multiplied(by: 2, rounding: .down).amount == 2000)
         #expect(try money.divided(by: 3, rounding: .down).amount == 333)
-        #expect(try Money(decimalAmount: 5000, currency: .JPY, rounding: .down).amount == 5000)
-        #expect(try Money(decimalAmount: 50, currency: .USD, rounding: .down).amount == 5000)
-        #expect(BigMoney(amount: 12, currency: .USD).amount == 12)
         #expect(try (money.toBigMoney() * 3 / 4).rounded(.down).amount == 750)
         #expect(throws: MoneyError.self) { try money.toBigMoney() / 0 }
+        #expect(throws: MoneyError.self) { try money.divided(by: 0, rounding: .down) }
     }
 
-    @Test("Decimal values pick the Decimal overloads unchanged")
-    func decimalOverloads() throws {
-        let money = try Money(amount: 100, currency: .JPY)
+    @Test("Decimal values pick the Decimal overloads unchanged", arguments: CurrencyFixture.all)
+    func decimalOverloads(fixture: CurrencyFixture) throws {
+        let money = try fixture.money(100)
         let exact = Decimal(string: "0.07")!
         let viaDouble = Decimal(0.07)  // the pitfall: 0.07000000000000001024
 
@@ -105,13 +126,13 @@ struct DoubleConversionTests {
         #expect(try money.multiplied(by: viaDouble, rounding: .up).amount == 8)
     }
 
-    @Test("Mixed literal chains type-check and round once")
-    func mixedChain() throws {
-        let price = try Money(amount: 1234, currency: .JPY)
-        let coupon = try Money(amount: 100, currency: .JPY)
+    @Test("Mixed literal chains type-check and round once", arguments: CurrencyFixture.all)
+    func mixedChain(fixture: CurrencyFixture) throws {
+        let price = try fixture.money(1234)
+        let coupon = try fixture.money(100)
 
         let total = try (price.toBigMoney() * 1.1 - coupon) / 2
-        #expect(total.amount == Decimal(string: "628.7"))
+        #expect(total.amount == fixture.standardUnits(minor: "628.7"))
         #expect(try total.rounded(.halfUp).amount == 629)
     }
 }

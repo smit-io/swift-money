@@ -128,7 +128,7 @@ public struct Money: Sendable, Hashable, Codable {
     ///
     /// Example: "$19.99", "¥1000", "€25.50"
     public var formatted: String {
-        Self.formatCurrency(decimalAmount, currency: currency, locale: .current)
+        formatCurrency(locale: .current)
     }
 
     /// Returns a formatted string using a specific locale.
@@ -136,23 +136,41 @@ public struct Money: Sendable, Hashable, Codable {
     /// - Parameter locale: The locale to use for formatting.
     /// - Returns: A formatted currency string.
     public func formatted(locale: Locale) -> String {
-        Self.formatCurrency(decimalAmount, currency: currency, locale: locale)
+        formatCurrency(locale: locale)
     }
 
     /// Returns a numeric string representation without currency symbols.
     ///
-    /// Example: "19.99" for $19.99, "1000" for ¥1000
+    /// Built from the integer amount, so it is exact at any decimal places
+    /// and identical on every host locale: a stable, machine-parseable
+    /// dot-decimal string. `formatted(locale:)` is the display path.
+    ///
+    /// Example: "19.99" for $19.99, "1000" for ¥1000, "-0.05" for -5 cents
     public var numericString: String {
-        Self.formatNumeric(decimalAmount, currency: currency)
+        let digits = String(amount.magnitude)
+        let places = currency.decimalPlaces
+        guard places > 0 else {
+            return amount < 0 ? "-" + digits : digits
+        }
+        let padded = String(repeating: "0", count: max(0, places + 1 - digits.count)) + digits
+        let sign = amount < 0 ? "-" : ""
+        return "\(sign)\(padded.dropLast(places)).\(padded.suffix(places))"
     }
 
     // MARK: - Formatting Implementation
 
-    static func formatCurrency(
-        _ amount: Decimal,
-        currency: Currency,
-        locale: Locale
-    ) -> String {
+    /// `FormatStyle` keeps every digit of a `Decimal`; `NumberFormatter`
+    /// rounds to about 15 significant digits once there are 16 or more
+    /// decimal places, so it is only the fallback for older OS versions.
+    func formatCurrency(locale: Locale) -> String {
+        if #available(iOS 15, macOS 12, tvOS 15, watchOS 8, *) {
+            return decimalAmount.formatted(
+                .currency(code: currency.code)
+                    .locale(locale)
+                    .precision(.fractionLength(currency.decimalPlaces))
+            )
+        }
+
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencyCode = currency.code
@@ -160,25 +178,7 @@ public struct Money: Sendable, Hashable, Codable {
         formatter.minimumFractionDigits = currency.decimalPlaces
         formatter.maximumFractionDigits = currency.decimalPlaces
 
-        return formatter.string(from: NSDecimalNumber(decimal: amount))
-            ?? formatNumeric(amount, currency: currency)
-    }
-
-    static func formatNumeric(
-        _ amount: Decimal,
-        currency: Currency
-    ) -> String {
-        // Pinned so numericString is a stable, machine-parseable dot-decimal
-        // string on every host locale; formatted(locale:) is the display path.
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.usesGroupingSeparator = false
-        formatter.minimumFractionDigits = currency.decimalPlaces
-        formatter.maximumFractionDigits = currency.decimalPlaces
-
-        return formatter.string(from: NSDecimalNumber(decimal: amount))
-            ?? "\(amount)"
+        return formatter.string(from: NSDecimalNumber(decimal: decimalAmount)) ?? numericString
     }
 }
 

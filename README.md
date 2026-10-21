@@ -625,6 +625,13 @@ MoneyKit includes a comprehensive test suite built with Swift Testing:
 swift test
 ```
 
+Every `Money` and `BigMoney` test runs against a shared set of currency
+fixtures (`Tests/MoneyKitTests/CurrencyFixture.swift`): ISO currencies at
+0, 2, 3, and 4 decimal places, an ISO code without a minor unit (XAU), a
+known code at a custom scale (USD at 4), a new code (ZZZ) at 0, 2, and 3,
+and extreme scales (1, 8, and 18). Expectations are stated in minor units,
+so the same assertions hold for every fixture.
+
 Test coverage:
 - ✅ Currency validation and equality
 - ✅ Money arithmetic and overflow detection

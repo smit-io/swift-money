@@ -53,6 +53,11 @@ joda-money. See the migration table in `ARITHMETIC_GUIDE.md`.
 ### Fixed
 - `RoundingMode.towardZero` and `.awayFromZero` rounded negative values
   as floor and ceiling. They now follow the magnitude.
+- `numericString` and `formatted` rounded to about 15 significant digits
+  at 16 or more decimal places (`NumberFormatter`): `Int.max` at 18 places
+  printed `9.223372036854780000`. `numericString` is now built from the
+  integer amount, and `formatted` uses `FormatStyle` on iOS 15 / macOS 12
+  and later, so both keep every digit.
 - `Money` Codable dropped a custom `decimalPlaces`: `Money(34590, USD at 4)`
   (`$3.4590`) decoded as `$345.90`. Payloads now carry `decimalPlaces` when
   it differs from the code's default; default-currency payloads are
