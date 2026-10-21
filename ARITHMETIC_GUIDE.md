@@ -86,6 +86,21 @@ try (one.toBigMoney() * 1.5 * 1.5).rounded(.down)     // ¥2 (2.25)
 divisor, and `Double` operands throw `invalidDecimal` for NaN or infinity;
 precision is `Decimal`'s 38 significant digits.
 
+A division that doesn't terminate is cut to 38 digits toward zero, so
+dividing and multiplying back lands just inside the original value. Rounding
+to nearest hides this; rounding toward zero does not:
+
+```swift
+let third = try Money(amount: 1, currency: .JPY).toBigMoney() / 3 * 3  // 0.99999…
+
+try third.rounded(.halfUp)      // ¥1 (also .bankers, .awayFromZero)
+try third.rounded(.towardZero)  // ¥0 (also .down here; .up for a negative value)
+```
+
+joda-money avoids the residue by rounding every division to the amount's
+scale, which loses the precision earlier instead: USD 1.00 ÷ 3 is 0.33 or
+0.34 depending on the mode, so × 3 gives 0.99 or 1.02.
+
 ## Rounding Modes
 
 | Mode | Description | 1357.4 → | 1357.5 → | -1357.5 → |
@@ -178,6 +193,9 @@ let total = try? usd + eur  // nil on mismatch
    `0.07000000000000001024`, which can round `.up` one unit too far.
 4. **Split with `distribute` / `allocate`**, not division, when the parts must
    add back up to the total.
+5. **Round to nearest after an inexact division.** `.towardZero` (and `.down`
+   / `.up` on the side toward zero) can land one unit short after dividing
+   by 3 or 7 and multiplying back.
 
 ## Migrating from 2.x
 

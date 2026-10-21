@@ -196,15 +196,62 @@ struct OperandMatrixTests {
         }
     }
 
-    @Test("BigMoney chains stay exact until rounded", arguments: CurrencyFixture.all, Operand.allCases)
-    func bigMoneyChain(fixture: CurrencyFixture, operand: Operand) throws {
-        // 1234 × 3 ÷ 7 × 7 ÷ 3 = 1234 exactly when nothing is rounded in between
-        // (÷ 7 is inexact in Decimal; × 7 brings it back within rounding).
-        guard operand.accepts("3") else { return }
-        let big = try fixture.money(1234).toBigMoney()
+    /// Divisors whose quotients terminate: dividing and multiplying back is exact.
+    static let terminatingDivisors = ["2", "4", "8", "-4", "0.25", "2.5", "0.2"]
 
-        let roundTrip = try operand.divide(operand.multiply(operand.divide(operand.multiply(big, by: "3"), by: "7"), by: "7"), by: "3")
-        #expect(try roundTrip.rounded(.halfUp).amount == 1234)
+    /// Amount in minor units and a divisor whose quotient doesn't terminate.
+    static let inexactRoundTrips: [(amount: Int, divisor: String)] = [
+        (1, "3"), (2, "3"), (1, "7"), (1000, "3"), (100, "6"), (1234, "7"), (5, "-3"), (1, "0.3"),
+    ]
+
+    @Test("Dividing and multiplying back is exact for terminating quotients, under every mode", arguments: CurrencyFixture.all, Operand.allCases)
+    func bigMoneyExactRoundTrip(fixture: CurrencyFixture, operand: Operand) throws {
+        for divisor in Self.terminatingDivisors where operand.accepts(divisor) {
+            for amount in [1, -1, 1234, -1234, 7] {
+                let big = try fixture.money(amount).toBigMoney()
+                let roundTrip = try operand.multiply(operand.divide(big, by: divisor), by: divisor)
+                for mode in CurrencyFixture.roundingModes {
+                    #expect(try roundTrip.rounded(mode).amount == amount, "\(amount) ÷ \(divisor) × \(divisor) \(mode)")
+                }
+            }
+        }
+    }
+
+    @Test("An inexact quotient multiplied back lands just inside the original", arguments: CurrencyFixture.all, Operand.allCases)
+    func bigMoneyInexactRoundTrip(fixture: CurrencyFixture, operand: Operand) throws {
+        // Decimal cuts a non-terminating quotient to 38 digits toward zero, so
+        // a ÷ d × d is a hair inside a. Model it as a - sign/10^6: nearest
+        // modes and .awayFromZero give a back; rounding toward zero (always
+        // .towardZero, .down for positive a, .up for negative a) is one unit short.
+        for (amount, divisor) in Self.inexactRoundTrips where operand.accepts(divisor) {
+            for sign in [1, -1] {
+                let value = sign * amount
+                let big = try fixture.money(value).toBigMoney()
+                let roundTrip = try operand.multiply(operand.divide(big, by: divisor), by: divisor)
+
+                #expect(roundTrip.amount != big.amount, "\(value) ÷ \(divisor) × \(divisor) should not be exact")
+                #expect(try (big - roundTrip).amount.magnitude < Decimal(string: "1e-30")!, "\(value) ÷ \(divisor) × \(divisor)")
+                for mode in CurrencyFixture.roundingModes {
+                    let expected = Self.exactRound(value * 1_000_000 - sign, 1_000_000, mode)
+                    #expect(try roundTrip.rounded(mode).amount == expected, "\(value) ÷ \(divisor) × \(divisor) \(mode)")
+                }
+            }
+        }
+    }
+
+    @Test("Rounding to nearest recovers a chain of inexact divisions", arguments: CurrencyFixture.all, Operand.allCases)
+    func bigMoneyChain(fixture: CurrencyFixture, operand: Operand) throws {
+        // 1234 × 3 ÷ 7 × 7 ÷ 3: ÷ 7 and ÷ 3 are both inexact.
+        guard operand.accepts("3") else { return }
+        for value in [1234, -1234] {
+            let big = try fixture.money(value).toBigMoney()
+            let roundTrip = try operand.divide(operand.multiply(operand.divide(operand.multiply(big, by: "3"), by: "7"), by: "7"), by: "3")
+
+            for mode in [RoundingMode.halfUp, .bankers, .awayFromZero] {
+                #expect(try roundTrip.rounded(mode).amount == value, "\(value) \(mode)")
+            }
+            #expect(try roundTrip.rounded(.towardZero).amount == value - value.signum(), "\(value) towardZero")
+        }
     }
 
     // MARK: - Money(decimalAmount:)

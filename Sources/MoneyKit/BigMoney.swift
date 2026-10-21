@@ -5,7 +5,9 @@ import Foundation
 /// `BigMoney` holds a signed `Decimal` in standard units (e.g., 12.3456 for
 /// $12.3456) and is never rounded implicitly. Chain multiplications,
 /// divisions, and sums on it, then convert back to `Money` with
-/// `rounded(_:)` — the one place a rounding decision is made.
+/// `rounded(_:)` — the one place a rounding decision is made. The only
+/// other limit is `Decimal`'s 38 significant digits, which matters after a
+/// division that doesn't terminate (see `/`).
 ///
 /// Example:
 /// ```swift
@@ -127,6 +129,14 @@ extension BigMoney {
 
     /// Divides by a decimal. Never rounds beyond `Decimal`'s 38-digit precision.
     ///
+    /// A quotient that doesn't terminate (÷ 3, ÷ 7) is cut to 38 significant
+    /// digits, toward zero. Multiplying it back lands just inside the
+    /// original: ¥1 / 3 * 3 is ¥0.99999…, which `.halfUp`, `.bankers`, and
+    /// `.awayFromZero` round to ¥1, but `.towardZero` rounds to ¥0, as does
+    /// `.down` for a positive value (`.up` for a negative one). Round such
+    /// results to nearest, or split with `Money.allocate(by:)` /
+    /// `Money.distribute(into:)` when parts must add back up.
+    ///
     /// - Throws:
     ///   - `MoneyError.invalidDecimal` if the divisor is NaN.
     ///   - `MoneyError.divisionByZero` if the divisor is zero.
@@ -153,7 +163,8 @@ extension BigMoney {
         lhs * Decimal(rhs)
     }
 
-    /// Divides by a `Double`, converted through its shortest text.
+    /// Divides by a `Double`, converted through its shortest text. Precision
+    /// is as for dividing by a `Decimal`.
     ///
     /// - Throws:
     ///   - `MoneyError.invalidDecimal` for NaN, infinity, or an out-of-range divisor.
@@ -162,7 +173,7 @@ extension BigMoney {
         try lhs / Decimal(shortestRepresentationOf: rhs)
     }
 
-    /// Divides by an integer.
+    /// Divides by an integer. Precision is as for dividing by a `Decimal`.
     ///
     /// - Throws: `MoneyError.divisionByZero` if the divisor is zero.
     public static func / (lhs: BigMoney, rhs: Int) throws -> BigMoney {

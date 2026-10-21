@@ -10,7 +10,6 @@ import Testing
 struct ErrorDescriptionTests {
 
     static let moneyErrors: [MoneyError] = [
-        .invalidCurrencyCode("US$"),
         .currencyMismatch(from: .USD, to: .EUR),
         .decimalPlacesMismatch(code: "USD", lhs: 2, rhs: 4),
         .divisionByZero,
@@ -24,7 +23,6 @@ struct ErrorDescriptionTests {
 
     static func fragments(_ error: MoneyError) -> [String] {
         switch error {
-        case .invalidCurrencyCode(let code): [code]
         case .currencyMismatch(let from, let to): [from.code, to.code]
         case .decimalPlacesMismatch(let code, let lhs, let rhs): [code, "\(lhs)", "\(rhs)"]
         case .divisionByZero: ["zero"]
@@ -37,7 +35,6 @@ struct ErrorDescriptionTests {
 
     static let currencyErrors: [CurrencyError] = [
         .invalidFormat("12D"),
-        .unknownCurrency("ABC"),
         .invalidDecimalPlaces(31),
         .invalidDecimalPlaces(-1),
     ]
@@ -45,20 +42,7 @@ struct ErrorDescriptionTests {
     static func fragments(_ error: CurrencyError) -> [String] {
         switch error {
         case .invalidFormat(let code): [code]
-        case .unknownCurrency(let code): [code]
         case .invalidDecimalPlaces(let places): ["\(places)", "0...30"]
-        }
-    }
-
-    static let formattingErrors: [MoneyFormattingError] = [
-        .formatterFailed(amount: Decimal(string: "-12.34")!, currencyCode: "USD"),
-        .unsupportedLocale(locale: Locale(identifier: "xx_XX"), currency: "JPY"),
-    ]
-
-    static func fragments(_ error: MoneyFormattingError) -> [String] {
-        switch error {
-        case .formatterFailed(let amount, let currencyCode): ["\(amount)", currencyCode]
-        case .unsupportedLocale(let locale, let currency): [locale.identifier, currency]
         }
     }
 
@@ -81,11 +65,6 @@ struct ErrorDescriptionTests {
 
     @Test("CurrencyError messages name their inputs", arguments: currencyErrors)
     func currencyError(error: CurrencyError) {
-        expectMessage(error, Self.fragments(error))
-    }
-
-    @Test("MoneyFormattingError messages name their inputs", arguments: formattingErrors)
-    func formattingError(error: MoneyFormattingError) {
         expectMessage(error, Self.fragments(error))
     }
 

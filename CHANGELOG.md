@@ -52,6 +52,9 @@ joda-money. See the migration table in `ARITHMETIC_GUIDE.md`.
   `percentage(_:)`, `withTax(rate:rounding:)`, `absolute`, and
   `tryAdd` / `trySubtract` / `tryMultiply` / `tryDivide` (use `try?`).
 - **Breaking:** `MoneyError.negativeAmount`.
+- **Breaking:** `MoneyError.invalidCurrencyCode`, `CurrencyError.unknownCurrency`,
+  and `MoneyFormattingError`, which were never thrown. Invalid codes throw
+  `CurrencyError.invalidFormat`; codes outside ISO 4217 are allowed.
 
 ### Fixed
 - `allocate(by:)` with a negative ratio threw `amountOverflow` ("share
