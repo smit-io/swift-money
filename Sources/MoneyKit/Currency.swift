@@ -20,7 +20,8 @@ public struct Currency: Sendable, Hashable, Codable {
     /// Creates a currency with the specified code and decimal places.
     ///
     /// - Parameters:
-    ///   - code: The ISO 4217 currency code (must be exactly 3 alphabetic characters).
+    ///   - code: The ISO 4217 currency code: exactly 3 ASCII letters, in
+    ///     either case (it is stored uppercased).
     ///   - decimalPlaces: The number of decimal places (defaults based on currency).
     ///     A custom value makes a different currency: it is not equal to the
     ///     default one, and combining their amounts throws
@@ -30,7 +31,7 @@ public struct Currency: Sendable, Hashable, Codable {
     public init(code: String, decimalPlaces: Int? = nil) throws {
         let upperCode = code.uppercased()
         guard upperCode.count == 3,
-              upperCode.allSatisfy({ $0.isLetter }) else {
+              upperCode.allSatisfy({ $0.isASCII && $0.isLetter }) else {
             throw CurrencyError.invalidFormat(code)
         }
 
@@ -50,7 +51,7 @@ public struct Currency: Sendable, Hashable, Codable {
     ///
     /// - Throws: `CurrencyError.invalidFormat` if validation fails.
     public func validate() throws {
-        guard code.count == 3, code.allSatisfy({ $0.isLetter }) else {
+        guard code.count == 3, code.allSatisfy({ $0.isASCII && $0.isLetter }) else {
             throw CurrencyError.invalidFormat(code)
         }
     }

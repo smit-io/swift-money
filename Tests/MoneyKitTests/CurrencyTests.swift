@@ -29,26 +29,17 @@ struct CurrencyTests {
         #expect(eur.code == "EUR")
     }
 
-    @Test("Currency rejects invalid codes")
-    func invalidCurrencyCodes() {
-        #expect(throws: CurrencyError.self) {
-            _ = try Currency(code: "US")  // Too short
-        }
-
-        #expect(throws: CurrencyError.self) {
-            _ = try Currency(code: "USDD")  // Too long
-        }
-
-        #expect(throws: CurrencyError.self) {
-            _ = try Currency(code: "12D")  // Contains numbers
-        }
-
-        #expect(throws: CurrencyError.self) {
-            _ = try Currency(code: "US$")  // Contains special chars
-        }
-
-        #expect(throws: CurrencyError.self) {
-            _ = try Currency(code: "")  // Empty
+    @Test("Currency rejects invalid codes with invalidFormat, reporting the input", arguments: [
+        "US", "USDD", "", "12D", "US$", "U D", " USD",  // length, digits, symbols, spaces
+        "日本円", "ÄÖÜ", "äbc", "ΑΒΓ", "ǆAB",             // letters, but not ASCII
+    ])
+    func invalidCurrencyCodes(code: String) {
+        for decimalPlaces in [nil, 2] {
+            let error = #expect(throws: CurrencyError.self) { try Currency(code: code, decimalPlaces: decimalPlaces) }
+            guard case .invalidFormat(code) = error else {
+                Issue.record("Expected invalidFormat(\(code)), got \(String(describing: error))")
+                continue
+            }
         }
     }
 

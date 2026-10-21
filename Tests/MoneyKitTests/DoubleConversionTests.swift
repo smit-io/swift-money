@@ -88,6 +88,44 @@ struct DoubleConversionTests {
         }
     }
 
+    @Test("A NaN Decimal throws invalidDecimal wherever it is rounded or divided by", arguments: CurrencyFixture.all, CurrencyFixture.roundingModes)
+    func nanDecimal(fixture: CurrencyFixture, mode: RoundingMode) throws {
+        let money = try fixture.money(100)
+        let big = money.toBigMoney()
+        let nan = BigMoney(amount: Decimal.nan, currency: fixture.currency)
+
+        let errors: [MoneyError?] = [
+            // Throwing entry points reject NaN at the call.
+            #expect(throws: MoneyError.self) { try money.multiplied(by: Decimal.nan, rounding: mode) },
+            #expect(throws: MoneyError.self) { try money.divided(by: Decimal.nan, rounding: mode) },
+            #expect(throws: MoneyError.self) { try Money(decimalAmount: Decimal.nan, currency: fixture.currency, rounding: mode) },
+            #expect(throws: MoneyError.self) { try big / Decimal.nan },
+            #expect(throws: MoneyError.self) { try Money.zero(fixture.currency).divided(by: Decimal.nan, rounding: mode) },
+            // A NaN BigMoney can be built without `try`; it fails when rounded.
+            #expect(throws: MoneyError.self) { try nan.rounded(mode) },
+            #expect(throws: MoneyError.self) { try (big * Decimal.nan).rounded(mode) },
+            #expect(throws: MoneyError.self) { try (big + nan).rounded(mode) },
+            #expect(throws: MoneyError.self) { try (nan / Decimal(2)).rounded(mode) },
+            #expect(throws: MoneyError.self) { try (nan * Decimal(0)).rounded(mode) },
+        ]
+        for error in errors {
+            guard case .invalidDecimal(let value) = error, value.isNaN else {
+                Issue.record("Expected invalidDecimal(nan), got \(String(describing: error))")
+                continue
+            }
+        }
+    }
+
+    @Test("A NaN Decimal divisor is reported before a zero check", arguments: CurrencyFixture.all)
+    func nanBeforeZero(fixture: CurrencyFixture) throws {
+        // NaN is checked first, so a NaN is never reported as divisionByZero.
+        let error = #expect(throws: MoneyError.self) { try fixture.money(0).toBigMoney() / Decimal.nan }
+        guard case .invalidDecimal = error else {
+            Issue.record("Expected invalidDecimal, got \(String(describing: error))")
+            return
+        }
+    }
+
     @Test("Dividing by a Double zero throws divisionByZero", arguments: CurrencyFixture.all)
     func doubleZeroDivisor(fixture: CurrencyFixture) throws {
         let money = try fixture.money(100)

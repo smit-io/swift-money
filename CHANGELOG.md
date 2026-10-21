@@ -60,6 +60,15 @@ joda-money. See the migration table in `ARITHMETIC_GUIDE.md`.
   threw `divisionByZero`; it now throws `negativePartCount`.
 - `allocate(by:)` trapped when the ratios summed beyond `Int.max`; it now
   throws `amountOverflow`.
+- A NaN `Decimal` threw `amountOverflow` ("Amount NaN exceeds the range")
+  when rounded. `Money(decimalAmount:)`, `multiplied(by:rounding:)`,
+  `divided(by:rounding:)`, `BigMoney / Decimal`, and `BigMoney.rounded(_:)`
+  now throw `invalidDecimal(.nan)`, as `Double` NaN already did.
+  `BigMoney(amount:)` and `BigMoney * Decimal` still accept NaN, since they
+  don't throw; the value fails when rounded.
+- `Currency(code:)` accepted any three letters, including non-ASCII ones
+  (`"日本円"`, `"ÄÖÜ"`). Codes must now be ASCII letters, as documented;
+  others throw `CurrencyError.invalidFormat`.
 - `RoundingMode.towardZero` and `.awayFromZero` rounded negative values
   as floor and ceiling. They now follow the magnitude.
 - `numericString` and `formatted` rounded to about 15 significant digits

@@ -24,7 +24,8 @@ public struct BigMoney: Sendable, Hashable {
     /// Creates a BigMoney value with the specified amount and currency.
     ///
     /// - Parameters:
-    ///   - amount: The signed amount in standard currency units.
+    ///   - amount: The signed amount in standard currency units. A NaN amount
+    ///     is kept, and `rounded(_:)` throws `MoneyError.invalidDecimal` for it.
     ///   - currency: The currency for this amount.
     public init(amount: Decimal, currency: Currency) {
         self.amount = amount
@@ -52,7 +53,9 @@ public struct BigMoney: Sendable, Hashable {
     /// Rounds to the currency's decimal places, producing `Money`.
     ///
     /// - Parameter mode: How to round digits beyond the currency's decimal places.
-    /// - Throws: `MoneyError.amountOverflow` if the rounded amount does not fit in `Money`.
+    /// - Throws:
+    ///   - `MoneyError.invalidDecimal` if the amount is NaN.
+    ///   - `MoneyError.amountOverflow` if the rounded amount does not fit in `Money`.
     public func rounded(_ mode: RoundingMode) throws -> Money {
         try Money(decimalAmount: amount, currency: currency, rounding: mode)
     }
@@ -124,8 +127,13 @@ extension BigMoney {
 
     /// Divides by a decimal. Never rounds beyond `Decimal`'s 38-digit precision.
     ///
-    /// - Throws: `MoneyError.divisionByZero` if the divisor is zero.
+    /// - Throws:
+    ///   - `MoneyError.invalidDecimal` if the divisor is NaN.
+    ///   - `MoneyError.divisionByZero` if the divisor is zero.
     public static func / (lhs: BigMoney, rhs: Decimal) throws -> BigMoney {
+        guard !rhs.isNaN else {
+            throw MoneyError.invalidDecimal(.nan)
+        }
         guard !rhs.isZero else {
             throw MoneyError.divisionByZero
         }

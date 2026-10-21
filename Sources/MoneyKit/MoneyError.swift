@@ -19,7 +19,8 @@ public enum MoneyError: LocalizedError, Sendable {
     /// Amount overflow occurred during calculation.
     case amountOverflow(description: String)
 
-    /// A `Double` has no `Decimal` value: NaN, infinity, or out of `Decimal`'s range.
+    /// A value is not a usable number: a `Double` that is NaN, infinite, or out
+    /// of `Decimal`'s range, or a NaN `Decimal` (reported as `.nan`).
     case invalidDecimal(Double)
 
     /// `allocate(by:)` was given a negative ratio.

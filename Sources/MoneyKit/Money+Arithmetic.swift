@@ -71,7 +71,9 @@ extension Money {
     /// - Parameters:
     ///   - multiplier: The value to multiply by (e.g., 1.1 for +10%).
     ///   - rounding: How to round the result.
-    /// - Throws: `MoneyError.amountOverflow` if the result is out of range.
+    /// - Throws:
+    ///   - `MoneyError.invalidDecimal` if the multiplier is NaN.
+    ///   - `MoneyError.amountOverflow` if the result is out of range.
     ///
     /// Example:
     /// ```swift
@@ -88,6 +90,7 @@ extension Money {
     ///   - divisor: The value to divide by.
     ///   - rounding: How to round the result.
     /// - Throws:
+    ///   - `MoneyError.invalidDecimal` if the divisor is NaN.
     ///   - `MoneyError.divisionByZero` if the divisor is zero.
     ///   - `MoneyError.amountOverflow` if the result is out of range.
     public func divided(by divisor: Decimal, rounding: RoundingMode) throws -> Money {

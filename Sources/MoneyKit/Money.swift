@@ -60,9 +60,13 @@ public struct Money: Sendable, Hashable, Codable {
     ///   - decimalAmount: The amount in standard currency units (e.g., dollars, euros).
     ///   - currency: The currency for this amount.
     ///   - rounding: How to round digits beyond the currency's decimal places.
-    /// - Throws: `MoneyError.amountOverflow` if the rounded amount is outside
-    ///   `-Int.max...Int.max`.
+    /// - Throws:
+    ///   - `MoneyError.invalidDecimal` if the amount is NaN.
+    ///   - `MoneyError.amountOverflow` if the rounded amount is outside `-Int.max...Int.max`.
     public init(decimalAmount: Decimal, currency: Currency, rounding: RoundingMode) throws {
+        guard !decimalAmount.isNaN else {
+            throw MoneyError.invalidDecimal(.nan)
+        }
         var scaled = decimalAmount * pow(Decimal(10), currency.decimalPlaces)
         var rounded = Decimal()
         NSDecimalRound(&rounded, &scaled, 0, rounding.nsRoundingMode(for: scaled))
