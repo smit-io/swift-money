@@ -117,7 +117,7 @@ public struct Money: Sendable, Hashable, Codable {
 
     // MARK: - Formatting Implementation
 
-    private static func formatCurrency(
+    static func formatCurrency(
         _ amount: Decimal,
         currency: Currency,
         locale: Locale
@@ -133,7 +133,7 @@ public struct Money: Sendable, Hashable, Codable {
             ?? formatNumeric(amount, currency: currency)
     }
 
-    private static func formatNumeric(
+    static func formatNumeric(
         _ amount: Decimal,
         currency: Currency
     ) -> String {

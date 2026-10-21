@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `SignedMoney`: a signed wrapper over `Money` (sign + magnitude) for values
+  that legitimately go negative. `Money.minus(_:)` subtracts without throwing
+  on negative results; full arithmetic (`+`, `-`, `*`, `/`, prefix `-`),
+  `Comparable`, `Codable`, and conversion back via `money`/`absolute`.
+- First-class `SignedMoney` ergonomics for balance-style code: mixed
+  `Money`/`SignedMoney` `+`/`-` operators (a signed operand promotes the
+  result to `SignedMoney`), `SignedMoney.zero(_:)`, prefix `-` on `Money`
+  returning `SignedMoney`, locale-aware `SignedMoney.formatted(locale:)`,
+  machine-parseable `SignedMoney.numericString`, and `sum(in:)` on
+  sequences of `Money` and `SignedMoney`.
+
 ### Fixed
 - `Money.allocate(by:)` no longer gives a leftover smallest unit to a zero
   ratio. The remainder went round-robin over every index, so `5¢` split by

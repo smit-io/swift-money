@@ -240,6 +240,63 @@ extension Money {
     }
 }
 
+// MARK: - Signed Arithmetic
+
+extension Money {
+    /// This value as a non-negative `SignedMoney`.
+    public var signed: SignedMoney {
+        SignedMoney(self)
+    }
+
+    /// Negates a Money value into a `SignedMoney`, so `-expense` reads the
+    /// way ledgers do. Zero stays zero. (Lives here, not with the mixed
+    /// operators in SignedMoney.swift, because a member operator must take
+    /// its enclosing type as an argument.)
+    public static prefix func - (value: Money) -> SignedMoney {
+        -value.signed
+    }
+
+    /// Subtracts another Money value, allowing a negative result.
+    ///
+    /// Unlike `-`, this never throws `MoneyError.negativeAmount` — the sign
+    /// lands in the returned `SignedMoney`.
+    ///
+    /// - Throws: `MoneyError.currencyMismatch` if the currencies don't match.
+    public func minus(_ other: Money) throws -> SignedMoney {
+        guard currency == other.currency else {
+            throw MoneyError.currencyMismatch(from: currency, to: other.currency)
+        }
+
+        return try SignedMoney(amount: amount - other.amount, currency: currency)
+    }
+}
+
+// MARK: - Summation
+
+extension Sequence where Element == Money {
+    /// Sums a sequence of Money values. The explicit currency defines the
+    /// result for an empty sequence.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.currencyMismatch` if any element differs from `currency`.
+    ///   - `MoneyError.amountOverflow` if the running total overflows.
+    public func sum(in currency: Currency) throws -> Money {
+        try reduce(Money(amount: 0, currency: currency), +)
+    }
+}
+
+extension Sequence where Element == SignedMoney {
+    /// Sums a sequence of SignedMoney values. The explicit currency defines
+    /// the result for an empty sequence.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.currencyMismatch` if any element differs from `currency`.
+    ///   - `MoneyError.amountOverflow` if the running total overflows.
+    public func sum(in currency: Currency) throws -> SignedMoney {
+        try reduce(SignedMoney.zero(currency), +)
+    }
+}
+
 // MARK: - Safe Arithmetic Methods
 
 extension Money {
