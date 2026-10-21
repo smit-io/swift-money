@@ -6,14 +6,15 @@ A type-safe Swift library for representing and manipulating monetary values with
 
 - 💰 **Integer-based Representation**: Stores amounts as integers in the smallest currency unit (cents, pence, yen, etc.)
 - 🌍 **ISO 4217 Support**: Decimal places for 165 currency codes generated straight from the official ISO 4217 registry (SIX Financial Services)
-- 🔒 **Type Safety**: Prevents mixing different currencies and negative amounts at compile time
+- 🔒 **Type Safety**: Throws instead of silently mixing currencies or scales
 - ⚡ **Swift Concurrency**: Full `Sendable` conformance for safe concurrent usage
 - 🧮 **Precise Arithmetic**: Uses `Decimal` internally to avoid floating-point precision issues
-- 🎯 **Flexible Rounding**: Multiple rounding modes (up, down, banker's, half-up) for calculations
+- 🎯 **Explicit Rounding**: Every inexact operation names its rounding mode; `BigMoney` chains calculations and rounds once
 - 🛡️ **Overflow Protection**: Built-in overflow detection for all arithmetic operations
 - 🌐 **Localization**: Automatic currency formatting based on locale
-- 📊 **Rich API**: Arithmetic operations, splitting, allocation, and percentage calculations
-- ✅ **Well Tested**: Comprehensive test suite with 150 tests
+- ➖ **Signed Amounts**: Balances, refunds, and deltas are plain `Money`
+- 📊 **Rich API**: Arithmetic, splitting, allocation, and summation
+- ✅ **Well Tested**: Comprehensive Swift Testing suite
 
 ## Requirements
 
@@ -28,7 +29,7 @@ Add MoneyKit to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/smit-io/swift-money.git", from: "2.0.0")
+    .package(url: "https://github.com/smit-io/swift-money.git", from: "3.0.0")
 ]
 ```
 
@@ -45,7 +46,7 @@ Then add it to your target dependencies:
 
 ## Maximum Amount Limits
 
-MoneyKit uses `Int` to store amounts in the smallest currency unit. The maximum representable amounts are:
+MoneyKit uses `Int` to store amounts in the smallest currency unit. Amounts range over `-Int.max...Int.max` (`Int.min` is rejected so negation never overflows). The maximum representable amounts are:
 
 | Currency | Maximum Amount | Decimal Representation |
 |----------|----------------|------------------------|
@@ -66,7 +67,7 @@ let price = try Money(amount: 1999, currency: .USD)  // $19.99
 let tax = try Money(amount: 159, currencyCode: "USD") // $1.59
 
 // Or from decimal amounts
-let shipping = try Money(decimalAmount: 5.00, currency: .USD)
+let shipping = try Money(decimalAmount: 5.00, currency: .USD, rounding: .halfUp)
 
 // Arithmetic operations
 let subtotal = try price + tax
@@ -86,8 +87,8 @@ print(total.numericString)  // "25.58"
 let usd = try Money(amount: 2500, currency: .USD)  // $25.00
 let jpy = try Money(amount: 1000, currency: .JPY)  // ¥1000
 
-// From decimal amount (convenience)
-let price = try Money(decimalAmount: 49.99, currency: .USD)
+// From decimal amount, rounded to the currency's decimal places
+let price = try Money(decimalAmount: 49.99, currency: .USD, rounding: .halfUp)
 
 // From currency code string
 let eur = try Money(amount: 5000, currencyCode: "EUR")
@@ -120,71 +121,71 @@ let custom = try Currency(code: "XXX", decimalPlaces: 4)
 
 ### Arithmetic Operations
 
-All arithmetic operations are type-safe and throw errors for currency mismatches:
+`Money` amounts are signed: balances, refunds, and deltas can go below zero.
+Arithmetic that stays in whole minor units is exact and throws only on a
+currency mismatch or overflow:
 
 ```swift
 let price = try Money(amount: 10000, currency: .USD)  // $100.00
 let discount = try Money(amount: 1500, currency: .USD)  // $15.00
 
-// Addition
 let total = try price + discount  // $115.00
-
-// Subtraction
 let final = try price - discount  // $85.00
+let owed = try discount - price   // -$85.00 (negative is fine)
+let bulk = try price * 5          // $500.00
+let refund = -price               // -$100.00 (also price.negated())
+let magnitude = owed.abs()        // $85.00
 
-// Multiplication by integer
-let bulk = try price * 5  // $500.00
-
-// Multiplication by decimal (basic)
-let withTax = try price * Decimal(1.08)  // $108.00
-
-// Division
-let half = try price / 2  // $50.00
-
-// Percentage
-let tax = try price.percentage(0.08)  // $8.00
+owed.isNegative        // true
+owed.isPositiveOrZero  // false
+Money.zero(.USD)       // $0.00
 ```
 
-### Flexible Rounding with MoneyCalculation
-
-For operations requiring precise rounding control, use the operator-based calculation API:
+Anything that can produce a fraction of a minor unit takes an explicit
+rounding mode, so no rounding happens behind your back:
 
 ```swift
 let price = try Money(amount: 1234, currency: .JPY)  // ¥1234
 
-// Multiply returns a MoneyCalculation
-let calc = price * 1.1  // ¥1357.4 (not yet rounded)
-
-// Choose your rounding mode
-let roundedUp = try calc.roundedUp      // ¥1358
-let roundedDown = try calc.roundedDown  // ¥1357
-let halfUp = try calc.halfUp            // ¥1357
-let bankers = try calc.bankers          // ¥1357 (banker's rounding)
-let value = try calc.value              // ¥1357 (uses banker's rounding)
+let withTax = try price.multiplied(by: 1.1, rounding: .down)  // ¥1357
+let third = try price.divided(by: 3, rounding: .halfUp)       // ¥411
+let fromDecimal = try Money(decimalAmount: 19.99, currency: .USD, rounding: .halfUp)
 ```
+
+Prefer `Decimal` literals or `Decimal(string:)` for rates. `Decimal(someDouble)`
+carries the `Double`'s binary error: `Decimal(19.99)` is `19.98999999999999488`.
+
+### Chained Calculations with BigMoney
+
+`BigMoney` holds an unrounded `Decimal` amount in standard units (dollars,
+not cents). Chain steps on it and round once at the end with `rounded(_:)`,
+the only way back to `Money`:
+
+```swift
+let price = try Money(amount: 1234, currency: .JPY)
+let coupon = try Money(amount: 100, currency: .JPY)
+
+let gross = try price.toBigMoney() * 1.1 - coupon  // 1257.4, not rounded
+let total = try gross.rounded(.down)               // ¥1257
+
+// Several steps, one rounding
+let once = try (price.toBigMoney() * 0.8 * 1.1).rounded(.down)  // ¥1085 (1085.92)
+```
+
+`BigMoney` supports `+` / `-` with `BigMoney` or `Money`, `*` / `/` by
+`Decimal`, prefix `-`, `abs()`, `isZero` / `isPositive` / `isNegative`,
+`Comparable`, `tryCompare(_:)`, and `sum(in:)`.
 
 ### Rounding Modes
 
-MoneyKit supports multiple rounding strategies:
-
-| Mode | Description | Example: 1357.4 → | Example: 1357.5 → |
-|------|-------------|-------------------|-------------------|
-| `.up` | Round toward positive infinity (ceiling) | 1358 | 1358 |
-| `.down` | Round toward zero (floor) | 1357 | 1357 |
-| `.halfUp` | Round 0.5 up (commercial rounding) | 1357 | 1358 |
-| `.bankers` | Round to nearest even (default) | 1357 | 1358 |
-| `.towardZero` | Truncate toward zero | 1357 | 1357 |
-| `.awayFromZero` | Round away from zero | 1358 | 1358 |
-
-```swift
-// Convenience methods with explicit rounding
-let price = try Money(amount: 1000, currency: .JPY)
-
-let result1 = try price.multiply(by: 1.08, rounding: .up)    // ¥1080
-let result2 = try price.multiply(by: 1.08, rounding: .down)  // ¥1080
-let result3 = try price.divide(by: 3.0, rounding: .up)       // ¥334
-let result4 = try price.divide(by: 3.0, rounding: .down)     // ¥333
-```
+| Mode | Description | 1357.4 → | 1357.5 → | -1357.5 → |
+|------|-------------|----------|----------|-----------|
+| `.up` | Toward positive infinity (ceiling) | 1358 | 1358 | -1357 |
+| `.down` | Toward negative infinity (floor) | 1357 | 1357 | -1358 |
+| `.halfUp` | Nearest, ties away from zero | 1357 | 1358 | -1358 |
+| `.bankers` | Nearest, ties to even | 1357 | 1358 | -1358 |
+| `.towardZero` | Truncate | 1357 | 1357 | -1357 |
+| `.awayFromZero` | Away from zero | 1358 | 1358 | -1358 |
 
 ### Tax Calculation (Japanese Consumption Tax Example)
 
@@ -192,52 +193,11 @@ let result4 = try price.divide(by: 3.0, rounding: .down)     // ¥333
 // Product price: ¥1,234
 let price = try Money(amount: 1234, currency: .JPY)
 
-// Apply 10% consumption tax (消費税)
-let calc = price * 1.1  // ¥1357.4
+// Apply 10% consumption tax (消費税), rounding down per common practice
+let taxInclusive = try price.multiplied(by: 1.1, rounding: .down)   // ¥1,357
 
-// Tax-inclusive price (round down per Japanese tax law)
-let taxInclusive = try calc.roundedDown  // ¥1,357
-
-// Alternative: Use convenience method
-let taxInclusive2 = try price.withTax()  // ¥1,358 (default 10% tax, banker's rounding)
-let taxInclusive3 = try price.withTax(rate: 1.08, rounding: .down)  // ¥1,332 (8% reduced rate)
-```
-
-### Advanced Calculations
-
-Chain multiple operations before final rounding:
-
-```swift
-let basePrice = try Money(amount: 10000, currency: .JPY)  // ¥10,000
-
-// Discount 20%, then add 10% tax
-let discounted = basePrice * 0.8      // MoneyCalculation: ¥8,000
-let withTax = discounted * 1.1        // MoneyCalculation: ¥8,800
-let final = try withTax.roundedDown   // Money: ¥8,800
-
-// Or combine calculations
-let calc1 = basePrice * 0.8
-let calc2 = try Money(amount: 500, currency: .JPY) * 1.0
-let combined = try calc1 + calc2      // MoneyCalculation
-let result = try combined.roundedUp   // Money
-```
-
-### Safe Arithmetic (No Throwing)
-
-For situations where you want to handle mismatches gracefully:
-
-```swift
-let usd = try Money(amount: 100, currency: .USD)
-let eur = try Money(amount: 100, currency: .EUR)
-
-// Returns nil instead of throwing
-if let result = usd.tryAdd(eur) {
-    print(result)
-} else {
-    print("Currency mismatch")
-}
-
-// Also available: trySubtract, tryMultiply, tryDivide
+// 8% reduced rate
+let reduced = try price.multiplied(by: 1.08, rounding: .down)       // ¥1,332
 ```
 
 ### Distribution & Allocation
@@ -252,7 +212,7 @@ let parts = try total.distribute(into: 3)
 // [Money(34), Money(33), Money(33)] - remainder distributed to first parts
 
 // Verify sum is preserved
-let sum = parts.reduce(0) { $0 + $1.amount }  // 100 ✓
+let sum = try parts.sum(in: .USD)  // Money(100) ✓
 
 // Weighted allocation
 let allocation = try total.allocate(by: [70, 30])
@@ -266,23 +226,17 @@ let shares = try total.allocate(by: [1, 2, 3])
 let withZero = try Money(amount: 5, currency: .USD).allocate(by: [0, 1, 1])
 // [Money(0), Money(3), Money(2)]
 
-// Signed values split by magnitude; every part takes the sign
-let refund = try SignedMoney(amount: -10000, currency: .USD)
+// Negative values split by magnitude; every part takes the sign
+let refund = try Money(amount: -10000, currency: .USD)
 let refundParts = try refund.allocate(by: [1, 1, 1])
 // [-3334, -3333, -3333] - sums to -10000
 ```
 
-### Signed Arithmetic (SignedMoney)
-
-`Money` is non-negative by design — right for prices, charges, and payment
-APIs. For values that legitimately go below zero (bank balances, budget nets,
-refund deltas), use `SignedMoney`: a sign plus a `Money` magnitude. Mixing the
-two in `+`/`-` promotes the result to `SignedMoney`, so balance code reads
-naturally:
+### Balances and Summation
 
 ```swift
 // Bank account: $20 in, $30 spent -> -$10
-var balance = SignedMoney.zero(.USD)
+var balance = Money.zero(.USD)
 balance = try balance + Money(amount: 2000, currency: .USD)
 balance = try balance - Money(amount: 3000, currency: .USD)
 
@@ -291,25 +245,15 @@ balance.isNegative    // true
 balance.formatted(locale: Locale(identifier: "en_US"))  // "-$10.00"
 
 // Budget: net income and expenses
-let entries: [SignedMoney] = [
-    try Money(amount: 500_000, currency: .USD).signed,  // salary
-    try -Money(amount: 180_000, currency: .USD),        // rent (prefix - flips into SignedMoney)
-    try -Money(amount: 65_000, currency: .USD),         // groceries
+let entries = [
+    try Money(amount: 500_000, currency: .USD),   // salary
+    try -Money(amount: 180_000, currency: .USD),  // rent
+    try -Money(amount: 65_000, currency: .USD),   // groceries
 ]
-let net = try entries.sum(in: .USD)  // SignedMoney(255_000), sign preserved
-
-// Subtraction that may go negative, straight from Money
-let diff = try Money(amount: 100, currency: .USD)
-    .minus(try Money(amount: 500, currency: .USD))  // SignedMoney(-400)
-
-// Back to Money once the sign is resolved
-net.money        // Money(255_000) — net is positive
-balance.money    // nil — the -$10 balance has no non-negative Money form
-let magnitude = balance.absolute  // Money(1000), drops the sign
+let net = try entries.sum(in: .USD)  // Money(255_000)
 ```
 
-Sequences of plain `Money` also sum directly: `try expenses.sum(in: .USD)`
-(the explicit currency defines the empty-sequence result).
+The explicit currency in `sum(in:)` defines the empty-sequence result.
 
 ### Formatting & Display
 
@@ -357,13 +301,6 @@ MoneyKit uses typed errors for clear error handling:
 
 ```swift
 do {
-    // Negative amounts are rejected
-    let invalid = try Money(amount: -100, currency: .USD)
-} catch MoneyError.negativeAmount(let amount) {
-    print("Amount cannot be negative: \(amount)")
-}
-
-do {
     // Currency mismatch in operations
     let usd = try Money(amount: 100, currency: .USD)
     let eur = try Money(amount: 100, currency: .EUR)
@@ -393,7 +330,7 @@ do {
 do {
     // Division by zero
     let money = try Money(amount: 100, currency: .USD)
-    let result = try money / 0
+    let result = try money.divided(by: 0, rounding: .down)
 } catch MoneyError.divisionByZero {
     print("Cannot divide by zero")
 }
@@ -417,8 +354,7 @@ let shipping = try Money(amount: 500, currency: .USD)       // $5.00
 let subtotal = try productPrice + shipping                  // $54.99
 
 // Tax calculation (8.5%)
-let taxRate = Decimal(0.085)
-let tax = try subtotal.percentage(taxRate)  // $4.67
+let tax = try subtotal.multiplied(by: 0.085, rounding: .halfUp)  // $4.67
 
 // Final total
 let total = try subtotal + tax  // $59.66
@@ -438,8 +374,7 @@ let shipping = try Money(amount: 500, currency: .JPY)
 let subtotal = try productPrice + shipping  // ¥1,734
 
 // 消費税10%適用（切り捨て）
-let withTax = subtotal * 1.1
-let total = try withTax.roundedDown  // ¥1,907
+let total = try subtotal.multiplied(by: 1.1, rounding: .down)  // ¥1,907
 
 print("お支払い金額: \(total.formatted)")  // "¥1,907"
 ```
@@ -491,7 +426,7 @@ let allocation = try complexRevenue.allocate(by: [5, 3, 2])
 import MoneyKit
 
 // Create charge amount (payment APIs expect smallest unit)
-let orderTotal = try Money(decimalAmount: 49.99, currency: .USD)
+let orderTotal = try Money(amount: 4999, currency: .USD)
 
 // Send to Payment API
 let chargeParams = [
@@ -500,7 +435,7 @@ let chargeParams = [
 ]
 
 // Calculate processing fees (2.9% + $0.30)
-let percentageFee = try orderTotal.percentage(0.029)  // $1.45
+let percentageFee = try orderTotal.multiplied(by: 0.029, rounding: .halfUp)  // $1.45
 let fixedFee = try Money(amount: 30, currency: .USD)  // $0.30
 let totalFee = try percentageFee + fixedFee           // $1.75
 
@@ -516,9 +451,9 @@ let monthlyPrice = try Money(amount: 2999, currency: .USD)
 let daysInMonth = 30
 let daysUsed = 15
 
-// Calculate prorated amount
-let dailyRate = try monthlyPrice / daysInMonth  // $1.00 per day
-let proratedAmount = try dailyRate * daysUsed   // $15.00
+// Prorate without rounding the daily rate: $29.99 * 15 / 30 = $14.995
+let prorated = try monthlyPrice.toBigMoney() * Decimal(daysUsed) / Decimal(daysInMonth)
+let proratedAmount = try prorated.rounded(.halfUp)  // $15.00
 
 print("Prorated charge: \(proratedAmount.formatted)")
 ```
@@ -529,15 +464,11 @@ print("Prorated charge: \(proratedAmount.formatted)")
 let originalPrice = try Money(amount: 10000, currency: .USD)  // $100.00
 
 // 20% off discount
-let discount = try originalPrice.percentage(0.20)  // $20.00
-let salePrice = try originalPrice - discount       // $80.00
+let discount = try originalPrice.multiplied(by: 0.20, rounding: .halfUp)  // $20.00
+let salePrice = try originalPrice - discount                              // $80.00
 
-// Or directly
-let salePrice2 = try originalPrice * Decimal(0.80)  // $80.00
-
-// Black Friday: Additional 15% off sale price
-let calc = salePrice * 0.85
-let finalPrice = try calc.roundedDown  // $68.00
+// Black Friday: an additional 15% off the sale price, rounded once
+let finalPrice = try (originalPrice.toBigMoney() * 0.80 * 0.85).rounded(.down)  // $68.00
 ```
 
 ### 8. Multi-Currency Price Lists (No Conversion)
@@ -591,6 +522,13 @@ let decoder = JSONDecoder()
 let decoded = try decoder.decode(Product.self, from: data)
 ```
 
+A currency built with a custom `decimalPlaces` adds the key, e.g.
+`{"amount":34590,"currencyCode":"USD","decimalPlaces":4}`, so the scale
+survives a round trip.
+
+`BigMoney` encodes its amount as a decimal string so no precision is lost to
+JSON numbers: `{"amount":"12.3456","currencyCode":"USD"}`.
+
 ### Concurrency Safety
 
 MoneyKit types are fully `Sendable` and safe to use across concurrency boundaries:
@@ -602,11 +540,7 @@ actor PriceCalculator {
             throw MoneyError.divisionByZero  // Or custom error
         }
 
-        var total = try Money(amount: 0, currency: firstCurrency)
-        for item in items {
-            total = try total + item
-        }
-        return total
+        return try items.sum(in: firstCurrency)
     }
 }
 
@@ -629,7 +563,7 @@ let total = try await calculator.calculateTotal(items)  // $45.00
 5. **Test with real currencies**: Different currencies have different decimal places - test with JPY, KWD, etc.
 6. **Preserve totals**: Use `distribute()` or `allocate()` for splitting to ensure sum preservation
 7. **Watch for overflow**: While limits are high, validate inputs if accepting user-provided amounts
-8. **Use MoneyCalculation**: For complex calculations, use operator-based API and defer rounding to the final step
+8. **Round once**: For multi-step calculations, work in `BigMoney` and call `rounded(_:)` at the final step
 
 ## Zero-Decimal Currencies
 
@@ -641,7 +575,7 @@ print(yen.decimalAmount)  // 1000 (not 10.00)
 print(yen.formatted)  // "¥1,000"
 
 // Creating from decimal (no rounding needed)
-let yen2 = try Money(decimalAmount: 5000, currency: .JPY)  // ¥5,000
+let yen2 = try Money(decimalAmount: 5000, currency: .JPY, rounding: .halfUp)  // ¥5,000
 ```
 
 Zero-decimal currencies (per the ISO 4217 registry): **BIF, CLP, DJF, GNF, ISK, JPY, KMF, KRW, PYG, RWF, UGX, UYI, VND, VUV, XAF, XOF, XPF**
@@ -680,7 +614,6 @@ swift test
 ```
 
 Test coverage:
-- ✅ 150 tests across 7 test suites
 - ✅ Currency validation and equality
 - ✅ Money arithmetic and overflow detection
 - ✅ Rounding modes and calculations

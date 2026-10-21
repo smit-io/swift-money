@@ -1,14 +1,10 @@
 import Foundation
 
-// MARK: - Arithmetic Operations
+// MARK: - Exact Arithmetic
 
 extension Money {
     /// Adds two Money values.
     ///
-    /// - Parameters:
-    ///   - lhs: The first Money value.
-    ///   - rhs: The second Money value.
-    /// - Returns: A new Money value representing the sum.
     /// - Throws:
     ///   - `MoneyError.currencyMismatch` if the currencies don't match.
     ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
@@ -26,36 +22,20 @@ extension Money {
         return try Money(amount: result, currency: lhs.currency)
     }
 
-    /// Subtracts one Money value from another.
+    /// Subtracts one Money value from another. The result may be negative.
     ///
-    /// - Parameters:
-    ///   - lhs: The Money value to subtract from.
-    ///   - rhs: The Money value to subtract.
-    /// - Returns: A new Money value representing the difference.
     /// - Throws:
     ///   - `MoneyError.currencyMismatch` if the currencies don't match.
     ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
-    ///   - `MoneyError.negativeAmount` if the result would be negative.
+    ///   - `MoneyError.amountOverflow` if the difference overflows.
     public static func - (lhs: Money, rhs: Money) throws -> Money {
-        try lhs.currency.requireSame(as: rhs.currency)
-        let result = lhs.amount - rhs.amount
-        return try Money(amount: result, currency: lhs.currency)
+        try lhs + -rhs
     }
 
-    /// Multiplies a Money value by a scalar.
+    /// Multiplies a Money value by an integer. Negative multipliers flip the sign.
     ///
-    /// - Parameters:
-    ///   - lhs: The Money value.
-    ///   - rhs: The scalar multiplier.
-    /// - Returns: A new Money value representing the product.
-    /// - Throws:
-    ///   - `MoneyError.negativeAmount` if the multiplier is negative.
-    ///   - `MoneyError.amountOverflow` if the product overflows.
+    /// - Throws: `MoneyError.amountOverflow` if the product overflows.
     public static func * (lhs: Money, rhs: Int) throws -> Money {
-        guard rhs >= 0 else {
-            throw MoneyError.negativeAmount(rhs)
-        }
-
         let (result, overflow) = lhs.amount.multipliedReportingOverflow(by: rhs)
         guard !overflow else {
             throw MoneyError.amountOverflow(
@@ -66,104 +46,101 @@ extension Money {
         return try Money(amount: result, currency: lhs.currency)
     }
 
-    /// Multiplies a Money value by a decimal scalar (with rounding).
-    ///
-    /// - Parameters:
-    ///   - lhs: The Money value.
-    ///   - rhs: The decimal multiplier.
-    /// - Returns: A new Money value representing the product (rounded).
-    /// - Throws:
-    ///   - `MoneyError.negativeAmount` if the result is negative.
-    ///   - `MoneyError.amountOverflow` if the result exceeds Int.max.
-    public static func * (lhs: Money, rhs: Decimal) throws -> Money {
-        var result = Decimal(lhs.amount) * rhs
-        var rounded = Decimal()
-        NSDecimalRound(&rounded, &result, 0, .plain)
-
-        // Check for negative BEFORE conversion (int64Value saturates)
-        guard rounded >= 0 else {
-            throw MoneyError.negativeAmount(Int(clamping: NSDecimalNumber(decimal: rounded).int64Value))
-        }
-
-        // Check for overflow BEFORE conversion (int64Value saturates at Int64.max)
-        guard rounded <= Decimal(Int.max) else {
-            throw MoneyError.amountOverflow(
-                description: "Multiplication overflow: \(lhs.amount) * \(rhs) exceeds Int.max"
-            )
-        }
-
-        let intResult = Int(NSDecimalNumber(decimal: rounded).int64Value)
-        return try Money(amount: intResult, currency: lhs.currency)
+    /// Negates the value. Never throws; zero stays zero.
+    public static prefix func - (value: Money) -> Money {
+        value.negated()
     }
 
-    /// Divides a Money value by a scalar.
+    /// The value with its sign flipped. Never throws; zero stays zero.
+    public func negated() -> Money {
+        // amount is never Int.min, so its negation is representable.
+        Money(unchecked: -amount, currency: currency)
+    }
+
+    /// The value without its sign.
+    public func abs() -> Money {
+        isNegative ? negated() : self
+    }
+}
+
+// MARK: - Rounded Arithmetic
+
+extension Money {
+    /// Multiplies by a decimal, rounding the result to the currency's decimal places.
     ///
     /// - Parameters:
-    ///   - lhs: The Money value.
-    ///   - rhs: The scalar divisor.
-    /// - Returns: A new Money value representing the quotient (rounded down).
+    ///   - multiplier: The value to multiply by (e.g., 1.1 for +10%).
+    ///   - rounding: How to round the result.
+    /// - Throws: `MoneyError.amountOverflow` if the result is out of range.
+    ///
+    /// Example:
+    /// ```swift
+    /// let price = try Money(amount: 1234, currency: .JPY)
+    /// let withTax = try price.multiplied(by: 1.1, rounding: .down) // ¥1357
+    /// ```
+    public func multiplied(by multiplier: Decimal, rounding: RoundingMode) throws -> Money {
+        try (toBigMoney() * multiplier).rounded(rounding)
+    }
+
+    /// Divides by a decimal, rounding the result to the currency's decimal places.
+    ///
+    /// - Parameters:
+    ///   - divisor: The value to divide by.
+    ///   - rounding: How to round the result.
     /// - Throws:
     ///   - `MoneyError.divisionByZero` if the divisor is zero.
-    ///   - `MoneyError.negativeAmount` if the result is negative.
-    public static func / (lhs: Money, rhs: Int) throws -> Money {
-        guard rhs != 0 else {
-            throw MoneyError.divisionByZero
-        }
-        return try Money(amount: lhs.amount / rhs, currency: lhs.currency)
+    ///   - `MoneyError.amountOverflow` if the result is out of range.
+    public func divided(by divisor: Decimal, rounding: RoundingMode) throws -> Money {
+        try (toBigMoney() / divisor).rounded(rounding)
     }
 
-    /// Distributes a Money value into equal parts.
+    /// This value as a `BigMoney`, for chained calculations that round once at the end.
+    public func toBigMoney() -> BigMoney {
+        BigMoney(amount: decimalAmount, currency: currency)
+    }
+}
+
+// MARK: - Splitting
+
+extension Money {
+    /// Distributes the value into equal parts that sum exactly to it.
     ///
-    /// This method ensures that the sum of all parts equals the original amount
-    /// by distributing any remainder across the first parts.
+    /// Leftover smallest units go one each to the first parts. A negative
+    /// value gives negative parts.
     ///
-    /// - Parameter parts: The number of parts to distribute into (must be > 0).
-    /// - Returns: An array of Money values representing the distribution.
+    /// - Parameter parts: The number of parts (must be > 0).
     /// - Throws: `MoneyError.divisionByZero` if parts is zero or negative.
     ///
     /// Example:
     /// ```swift
     /// let total = try Money(amount: 100, currency: .USD)
     /// let split = try total.distribute(into: 3)
-    /// // Returns [Money(34), Money(33), Money(33)]
+    /// // [34, 33, 33] cents
     /// ```
     public func distribute(into parts: Int) throws -> [Money] {
         guard parts > 0 else {
             throw MoneyError.divisionByZero
         }
-
-        let baseAmount = amount / parts
-        let remainder = amount % parts
-
-        var distribution: [Money] = []
-        for i in 0..<parts {
-            let extra = i < remainder ? 1 : 0
-            let partAmount = baseAmount + extra
-            distribution.append(try Money(amount: partAmount, currency: currency))
-        }
-
-        return distribution
+        return try allocate(by: Array(repeating: 1, count: parts))
     }
 
-    /// Allocates a Money value according to specified ratios.
+    /// Allocates the value according to ratios, keeping the exact sum.
     ///
-    /// This method distributes the amount proportionally while ensuring
-    /// no money is lost to rounding errors. Each share is rounded down, then
-    /// the leftover smallest units go one each to the non-zero ratios, in
-    /// order from the first. A zero ratio always receives zero.
+    /// The magnitude is split proportionally: each share is rounded down,
+    /// then the leftover smallest units go one each to the non-zero ratios,
+    /// in order from the first. Every part takes this value's sign, so
+    /// -$100.00 by `[1, 1, 1]` gives -$33.34, -$33.33, -$33.33. A zero ratio
+    /// always receives zero.
     ///
-    /// - Parameter ratios: An array of non-negative integers representing the allocation ratios.
-    /// - Returns: An array of Money values representing the allocation.
+    /// - Parameter ratios: Non-negative integers giving each part's weight.
+    /// - Returns: The parts, in the order of `ratios`.
     /// - Throws: `MoneyError.divisionByZero` if ratios is empty or contains only zeros.
     ///
     /// Example:
     /// ```swift
     /// let total = try Money(amount: 100, currency: .USD)
-    /// let allocation = try total.allocate(by: [1, 1, 1])
-    /// // Returns [Money(34), Money(33), Money(33)]
-    ///
     /// let weighted = try total.allocate(by: [70, 30])
-    /// // Returns [Money(70), Money(30)]
+    /// // [70, 30] cents
     /// ```
     public func allocate(by ratios: [Int]) throws -> [Money] {
         guard !ratios.isEmpty else {
@@ -175,12 +152,12 @@ extension Money {
             throw MoneyError.divisionByZero
         }
 
-        var allocated: [Money] = []
-        var remainder = amount
+        let magnitude = Swift.abs(amount)
+        var shares: [Int] = []
+        var remainder = magnitude
 
         for ratio in ratios {
-            var share = Decimal(amount) * Decimal(ratio)
-            share = share / Decimal(total)
+            var share = Decimal(magnitude) * Decimal(ratio) / Decimal(total)
             var rounded = Decimal()
             NSDecimalRound(&rounded, &share, 0, .down)
 
@@ -192,7 +169,7 @@ extension Money {
             }
 
             let shareInt = Int(NSDecimalNumber(decimal: rounded).int64Value)
-            allocated.append(try Money(amount: shareInt, currency: currency))
+            shares.append(shareInt)
             remainder -= shareInt
         }
 
@@ -200,72 +177,11 @@ extension Money {
         // part: a zero ratio's share is exactly zero, so it lost nothing to rounding.
         let eligible = ratios.indices.filter { ratios[$0] > 0 }
         for i in 0..<remainder {
-            let index = eligible[i % eligible.count]
-            allocated[index] = try Money(amount: allocated[index].amount + 1, currency: currency)
+            shares[eligible[i % eligible.count]] += 1
         }
 
-        return allocated
-    }
-
-    /// Calculates a percentage of this Money value.
-    ///
-    /// - Parameter percentage: The percentage as a decimal (e.g., 0.15 for 15%).
-    /// - Returns: A new Money value representing the percentage.
-    /// - Throws: `MoneyError.negativeAmount` if the result is negative.
-    ///
-    /// Example:
-    /// ```swift
-    /// let price = try Money(amount: 10000, currency: .USD) // $100.00
-    /// let tax = try price.percentage(0.15) // $15.00
-    /// ```
-    public func percentage(_ percentage: Decimal) throws -> Money {
-        try self * percentage
-    }
-
-    /// Checks if this Money value is zero.
-    public var isZero: Bool {
-        amount == 0
-    }
-
-    /// Checks if this Money value is positive (greater than zero).
-    public var isPositive: Bool {
-        amount > 0
-    }
-
-    /// Returns the absolute value (Money amounts are always non-negative, so returns self).
-    public var absolute: Money {
-        self
-    }
-}
-
-// MARK: - Signed Arithmetic
-
-extension Money {
-    /// This value as a non-negative `SignedMoney`.
-    public var signed: SignedMoney {
-        SignedMoney(self)
-    }
-
-    /// Negates a Money value into a `SignedMoney`, so `-expense` reads the
-    /// way ledgers do. Zero stays zero. (Lives here, not with the mixed
-    /// operators in SignedMoney.swift, because a member operator must take
-    /// its enclosing type as an argument.)
-    public static prefix func - (value: Money) -> SignedMoney {
-        -value.signed
-    }
-
-    /// Subtracts another Money value, allowing a negative result.
-    ///
-    /// Unlike `-`, this never throws `MoneyError.negativeAmount` — the sign
-    /// lands in the returned `SignedMoney`.
-    ///
-    /// - Throws:
-    ///   - `MoneyError.currencyMismatch` if the currencies don't match.
-    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
-    public func minus(_ other: Money) throws -> SignedMoney {
-        try currency.requireSame(as: other.currency)
-
-        return try SignedMoney(amount: amount - other.amount, currency: currency)
+        // Each share is within 0...magnitude, so it and its negation are valid amounts.
+        return shares.map { Money(unchecked: isNegative ? -$0 : $0, currency: currency) }
     }
 }
 
@@ -280,68 +196,6 @@ extension Sequence where Element == Money {
     ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
     ///   - `MoneyError.amountOverflow` if the running total overflows.
     public func sum(in currency: Currency) throws -> Money {
-        try reduce(Money(amount: 0, currency: currency), +)
-    }
-}
-
-extension Sequence where Element == SignedMoney {
-    /// Sums a sequence of SignedMoney values. The explicit currency defines
-    /// the result for an empty sequence.
-    ///
-    /// - Throws:
-    ///   - `MoneyError.currencyMismatch` if any element differs from `currency`.
-    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
-    ///   - `MoneyError.amountOverflow` if the running total overflows.
-    public func sum(in currency: Currency) throws -> SignedMoney {
-        try reduce(SignedMoney.zero(currency), +)
-    }
-}
-
-// MARK: - Safe Arithmetic Methods
-
-extension Money {
-    /// Safely adds another Money value, returning nil if currencies don't match or overflow occurs.
-    ///
-    /// - Parameter other: The Money value to add.
-    /// - Returns: The sum, or nil if currencies don't match or overflow occurs.
-    public func tryAdd(_ other: Money) -> Money? {
-        guard currency == other.currency else { return nil }
-        let (result, overflow) = amount.addingReportingOverflow(other.amount)
-        guard !overflow else { return nil }
-        return try? Money(amount: result, currency: currency)
-    }
-
-    /// Safely subtracts another Money value, returning nil if currencies don't match or result is negative.
-    ///
-    /// - Parameter other: The Money value to subtract.
-    /// - Returns: The difference, or nil if currencies don't match or result would be negative.
-    public func trySubtract(_ other: Money) -> Money? {
-        guard currency == other.currency else { return nil }
-        let result = amount - other.amount
-        guard result >= 0 else { return nil }
-        return try? Money(amount: result, currency: currency)
-    }
-
-    /// Safely multiplies by a scalar, returning nil if the result is negative or overflow occurs.
-    ///
-    /// - Parameter scalar: The multiplier.
-    /// - Returns: The product, or nil if the result would be negative or overflow occurs.
-    public func tryMultiply(by scalar: Int) -> Money? {
-        let (result, overflow) = amount.multipliedReportingOverflow(by: scalar)
-        guard !overflow else { return nil }
-        guard result >= 0 else { return nil }
-        return try? Money(amount: result, currency: currency)
-    }
-
-    /// Safely divides by a scalar, returning nil if divisor is zero, overflow occurs, or result is negative.
-    ///
-    /// - Parameter scalar: The divisor.
-    /// - Returns: The quotient, or nil if divisor is zero, overflow occurs, or result would be negative.
-    public func tryDivide(by scalar: Int) -> Money? {
-        guard scalar != 0 else { return nil }
-        let (result, overflow) = amount.dividedReportingOverflow(by: scalar)
-        guard !overflow else { return nil }
-        guard result >= 0 else { return nil }
-        return try? Money(amount: result, currency: currency)
+        try reduce(Money.zero(currency), +)
     }
 }

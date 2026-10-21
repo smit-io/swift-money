@@ -75,6 +75,12 @@ public struct Currency: Sendable, Hashable, Codable {
         Self.isoMinorUnits[code] != nil
     }
 
+    /// Whether `decimalPlaces` is the one `init(code:)` would pick. Money
+    /// payloads only spell out decimal places when this is `false`.
+    var hasDefaultDecimalPlaces: Bool {
+        decimalPlaces == Self.defaultDecimalPlaces(for: code)
+    }
+
     // MARK: - Standard Currency Constants
 
     /// Japanese Yen (zero decimal places)

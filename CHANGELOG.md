@@ -5,6 +5,52 @@ All notable changes to MoneyKit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-10-21
+
+One signed `Money` type plus `BigMoney` for calculations, modelled on
+joda-money. See the migration table in `ARITHMETIC_GUIDE.md`.
+
+### Changed
+- **Breaking:** `Money` amounts are signed. Negative results from `-`, `*`,
+  and decoding are valid values instead of throwing. `Int.min` is still
+  rejected (`amountOverflow`) so negation and `abs()` never overflow.
+- **Breaking:** `Money(decimalAmount:currency:)` is now
+  `Money(decimalAmount:currency:rounding:)`; the old initializer rounded
+  `.halfUp` implicitly.
+- `allocate(by:)` and `distribute(into:)` split negative values by
+  magnitude and give every part the sign, so parts still sum exactly.
+
+### Added
+- `BigMoney`: a signed `Decimal` amount in standard units, never rounded
+  implicitly. `+` / `-` with `BigMoney` or `Money`, `*` / `/` by `Decimal`,
+  prefix `-`, `abs()`, sign queries, `Comparable`, `tryCompare(_:)`,
+  `sum(in:)`, and `rounded(_:)` back to `Money`. Codable encodes the amount
+  as a string to keep full precision.
+- `Money.zero(_:)`, `negated()`, prefix `-`, `abs()`, `isNegative`,
+  `isPositiveOrZero`, `isNegativeOrZero`.
+- `Money.multiplied(by:rounding:)` and `divided(by:rounding:)` taking
+  `Decimal`, and `toBigMoney()`.
+
+### Removed
+- **Breaking:** `SignedMoney`, `Money.minus(_:)`, `Money.signed`, and the
+  mixed `Money` / `SignedMoney` operators: plain `Money` covers them.
+- **Breaking:** `MoneyCalculation` and the `Double` / `Float` operators
+  that produced it: use `BigMoney`. `Decimal(someDouble)` is lossy.
+- **Breaking:** `Money * Decimal` and `Money / Int`, which rounded
+  silently: use `multiplied(by:rounding:)` / `divided(by:rounding:)`.
+- **Breaking:** `multiply(by:rounding:)`, `divide(by:rounding:)`,
+  `percentage(_:)`, `withTax(rate:rounding:)`, `absolute`, and
+  `tryAdd` / `trySubtract` / `tryMultiply` / `tryDivide` (use `try?`).
+- **Breaking:** `MoneyError.negativeAmount`.
+
+### Fixed
+- `RoundingMode.towardZero` and `.awayFromZero` rounded negative values
+  as floor and ceiling. They now follow the magnitude.
+- `Money` Codable dropped a custom `decimalPlaces`: `Money(34590, USD at 4)`
+  (`$3.4590`) decoded as `$345.90`. Payloads now carry `decimalPlaces` when
+  it differs from the code's default; default-currency payloads are
+  unchanged, and payloads without the key decode at the default.
+
 ## [2.0.0] - 2026-10-21
 
 ### Changed

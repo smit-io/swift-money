@@ -18,7 +18,7 @@ func basicExamples() throws {
     print("Shipping: \(shipping.formatted)")  // $5.00
 
     // From decimal amount
-    let tax = try Money(decimalAmount: 1.59, currency: .USD)
+    let tax = try Money(decimalAmount: 1.59, currency: .USD, rounding: .halfUp)
     print("Tax: \(tax.formatted)\n")  // $1.59
 }
 
@@ -36,8 +36,7 @@ func ecommerceCheckout() throws {
     print("Subtotal: \(subtotal.formatted)")
 
     // Calculate tax (8%)
-    let taxRate = Decimal(0.08)
-    let tax = try subtotal.percentage(taxRate)
+    let tax = try subtotal.multiplied(by: 0.08, rounding: .halfUp)
     print("Tax (8%): \(tax.formatted)")
 
     // Calculate total
@@ -50,7 +49,7 @@ func ecommerceCheckout() throws {
 func paymentApiIntegration() throws {
     print("=== Payment API Integration ===\n")
 
-    let orderTotal = try Money(decimalAmount: 49.99, currency: .USD)
+    let orderTotal = try Money(amount: 4999, currency: .USD)
 
     // Prepare payment charge parameters
     let chargeAmount = orderTotal.amount  // 4999 (cents)
@@ -60,7 +59,7 @@ func paymentApiIntegration() throws {
     print("Payment charge currency: \(chargeCurrency)")
 
     // Calculate processing fees (2.9% + $0.30)
-    let percentageFee = try orderTotal.percentage(0.029)
+    let percentageFee = try orderTotal.multiplied(by: 0.029, rounding: .halfUp)
     let fixedFee = try Money(amount: 30, currency: .USD)
     let totalFee = try percentageFee + fixedFee
 
@@ -87,7 +86,7 @@ func billSplitting() throws {
     }
 
     // Verify sum
-    let sum = try split.reduce(try Money(amount: 0, currency: .USD)) { try $0 + $1 }
+    let sum = try split.sum(in: .USD)
     print("Verification - Sum equals total: \(sum == billTotal)\n")
 }
 
@@ -121,8 +120,8 @@ func multiCurrency() throws {
     print("JPY amount: \(jpy.formatted) (\(jpy.decimalAmount))")
     print("KWD amount: \(kwd.formatted) (\(kwd.decimalAmount))")
 
-    // Safe operations across currencies
-    if let result = usd.tryAdd(jpy) {
+    // Mixing currencies throws; try? turns it into nil
+    if let result = try? usd + jpy {
         print("Sum: \(result.formatted)")
     } else {
         print("Cannot add USD and JPY (different currencies)\n")
@@ -138,8 +137,7 @@ func discountCalculations() throws {
     print("Original price: \(originalPrice.formatted)")
 
     // 20% off
-    let discountRate = Decimal(0.20)
-    let discount = try originalPrice.percentage(discountRate)
+    let discount = try originalPrice.multiplied(by: 0.20, rounding: .halfUp)
     print("Discount (20%): \(discount.formatted)")
 
     let salePrice = try originalPrice - discount
@@ -176,11 +174,42 @@ func bulkDiscount() throws {
     print("Subtotal: \(subtotal.formatted)")
 
     // 10% bulk discount
-    let discount = try subtotal.percentage(0.10)
+    let discount = try subtotal.multiplied(by: 0.10, rounding: .halfUp)
     let total = try subtotal - discount
 
     print("Bulk discount (10%): \(discount.formatted)")
     print("Total: \(total.formatted)\n")
+}
+
+// MARK: - Balances
+
+func balances() throws {
+    print("=== Balances ===\n")
+
+    var balance = Money.zero(.USD)
+    balance = try balance + Money(amount: 2000, currency: .USD)  // +$20.00
+    balance = try balance - Money(amount: 3000, currency: .USD)  // -$30.00
+    print("Balance: \(balance.formatted)")  // -$10.00
+
+    // Negative totals split with the sign on every part
+    let parts = try balance.allocate(by: [1, 1, 1])
+    print("Split: \(parts.map(\.formatted))\n")
+}
+
+// MARK: - Chained Calculation
+
+func chainedCalculation() throws {
+    print("=== Chained Calculation ===\n")
+
+    let price = try Money(amount: 1234, currency: .JPY)
+    let coupon = try Money(amount: 100, currency: .JPY)
+
+    // 10% tax, minus a coupon, rounded once at the end
+    let gross = try price.toBigMoney() * 1.1 - coupon
+    print("Unrounded: \(gross)")  // JPY 1257.4
+
+    let total = try gross.rounded(.down)
+    print("Total: \(total.formatted)\n")  // ¥1,257
 }
 
 // MARK: - Currency Formatting
@@ -214,6 +243,8 @@ func runExamples() {
         try discountCalculations()
         try subscriptionPricing()
         try bulkDiscount()
+        try balances()
+        try chainedCalculation()
         try currencyFormatting()
     } catch {
         print("Error: \(error)")

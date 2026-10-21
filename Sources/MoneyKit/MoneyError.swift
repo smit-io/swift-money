@@ -5,9 +5,6 @@ public enum MoneyError: LocalizedError, Sendable {
     /// The specified currency code is invalid (not 3 alphabetic characters).
     case invalidCurrencyCode(String)
 
-    /// The amount cannot be negative.
-    case negativeAmount(Int)
-
     /// Attempted to perform an operation on Money values with different currencies.
     case currencyMismatch(from: Currency, to: Currency)
 
@@ -26,8 +23,6 @@ public enum MoneyError: LocalizedError, Sendable {
         switch self {
         case .invalidCurrencyCode(let code):
             return "Invalid currency code: '\(code)'. Currency codes must be exactly 3 alphabetic characters (ISO 4217)."
-        case .negativeAmount(let amount):
-            return "Amount cannot be negative: \(amount)."
         case .currencyMismatch(let from, let to):
             return "Currency mismatch: cannot operate on \(from.code) and \(to.code)."
         case .decimalPlacesMismatch(let code, let lhs, let rhs):

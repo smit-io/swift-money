@@ -1,20 +1,24 @@
 import Foundation
 
-/// A value type representing a monetary amount in the smallest unit (integer-based).
+/// A monetary amount in the smallest currency unit (integer-based).
 ///
-/// `Money` holds an integer amount (e.g., cents for USD, yen for JPY) along with
-/// its associated currency. This design avoids floating-point precision issues
-/// and aligns with payment processor APIs.
+/// `Money` holds a signed integer amount (e.g., cents for USD, yen for JPY)
+/// along with its currency. Amounts may be negative — net balances, refunds,
+/// and deltas are all plain `Money`. Arithmetic that stays in whole minor
+/// units is exact; anything that can produce a fraction of a minor unit takes
+/// an explicit `RoundingMode`, or goes through `BigMoney` to round once at
+/// the end.
 ///
 /// Example:
 /// ```swift
 /// let price = try Money(amount: 1999, currency: .USD) // $19.99
-/// let tax = try Money(amount: 159, currencyCode: "USD") // $1.59
-/// let total = try price + tax // $21.58
-/// print(total.formatted) // "$21.58"
+/// let refund = try Money(amount: 2500, currency: .USD) // $25.00
+/// let net = try price - refund // -$5.01
+/// print(net.formatted) // "-$5.01"
 /// ```
 public struct Money: Sendable, Hashable, Codable {
     /// The amount in the smallest currency unit (e.g., cents, pence, yen).
+    /// Never `Int.min`, so negation and `abs()` cannot overflow.
     public let amount: Int
 
     /// The currency for this monetary amount.
@@ -23,67 +27,70 @@ public struct Money: Sendable, Hashable, Codable {
     /// Creates a Money value with the specified amount and currency.
     ///
     /// - Parameters:
-    ///   - amount: The amount in the smallest currency unit (must be non-negative).
+    ///   - amount: The signed amount in the smallest currency unit.
     ///   - currency: The currency for this amount.
-    /// - Throws: `MoneyError.negativeAmount` if amount is negative.
+    /// - Throws: `MoneyError.amountOverflow` if `amount == Int.min` (its
+    ///   negation is not representable).
     public init(amount: Int, currency: Currency) throws {
-        guard amount >= 0 else {
-            throw MoneyError.negativeAmount(amount)
+        guard amount != Int.min else {
+            throw MoneyError.amountOverflow(
+                description: "Amount \(amount) has no representable negation"
+            )
         }
-        self.amount = amount
-        self.currency = currency
+        self.init(unchecked: amount, currency: currency)
     }
 
     /// Creates a Money value from an ISO 4217 currency code string.
     ///
     /// - Parameters:
-    ///   - amount: The amount in the smallest currency unit (must be non-negative).
+    ///   - amount: The signed amount in the smallest currency unit.
     ///   - currencyCode: The ISO 4217 currency code (e.g., "USD", "EUR").
     /// - Throws:
-    ///   - `MoneyError.negativeAmount` if amount is negative.
+    ///   - `MoneyError.amountOverflow` if `amount == Int.min`.
     ///   - `CurrencyError.invalidFormat` if the currency code is invalid.
     public init(amount: Int, currencyCode: String) throws {
         let currency = try Currency(code: currencyCode)
         try self.init(amount: amount, currency: currency)
     }
 
-    /// Creates a Money value from a decimal amount (e.g., 19.99 for $19.99).
-    ///
-    /// This convenience initializer converts the decimal to the smallest unit
-    /// based on the currency's decimal places.
+    /// Creates a Money value from a decimal amount in standard units (e.g.,
+    /// 19.99 for $19.99), rounding to the currency's decimal places.
     ///
     /// - Parameters:
     ///   - decimalAmount: The amount in standard currency units (e.g., dollars, euros).
     ///   - currency: The currency for this amount.
-    /// - Throws: `MoneyError.negativeAmount` if the resulting amount is negative.
-    public init(decimalAmount: Decimal, currency: Currency) throws {
-        let multiplier = pow(Decimal(10), currency.decimalPlaces)
-        var smallestUnitAmount = decimalAmount * multiplier
+    ///   - rounding: How to round digits beyond the currency's decimal places.
+    /// - Throws: `MoneyError.amountOverflow` if the rounded amount is outside
+    ///   `-Int.max...Int.max`.
+    public init(decimalAmount: Decimal, currency: Currency, rounding: RoundingMode) throws {
+        var scaled = decimalAmount * pow(Decimal(10), currency.decimalPlaces)
         var rounded = Decimal()
-        NSDecimalRound(&rounded, &smallestUnitAmount, 0, .plain)
+        NSDecimalRound(&rounded, &scaled, 0, rounding.nsRoundingMode(for: scaled))
 
-        // Use int64Value for safe conversion
-        let int64Amount = NSDecimalNumber(decimal: rounded).int64Value
-
-        // Check for negative
-        guard int64Amount >= 0 else {
-            throw MoneyError.negativeAmount(Int(clamping: int64Amount))
-        }
-
-        // Check for overflow
-        guard int64Amount <= Int.max else {
+        // Range-check BEFORE conversion: int64Value saturates out of range.
+        guard rounded >= Decimal(-Int.max), rounded <= Decimal(Int.max) else {
             throw MoneyError.amountOverflow(
-                description: "Amount \(int64Amount) exceeds maximum for \(currency.code)"
+                description: "Amount \(decimalAmount) exceeds the range for \(currency.code)"
             )
         }
 
-        let intAmount = Int(int64Amount)
-        try self.init(amount: intAmount, currency: currency)
+        self.init(unchecked: Int(NSDecimalNumber(decimal: rounded).int64Value), currency: currency)
+    }
+
+    /// Skips the `Int.min` check. Callers must guarantee `amount != Int.min`.
+    init(unchecked amount: Int, currency: Currency) {
+        self.amount = amount
+        self.currency = currency
+    }
+
+    /// A zero amount in the given currency.
+    public static func zero(_ currency: Currency) -> Money {
+        Money(unchecked: 0, currency: currency)
     }
 
     // MARK: - Computed Properties
 
-    /// The amount as a Decimal value in standard currency units (e.g., 19.99 for $19.99).
+    /// The signed amount as a Decimal in standard currency units (e.g., 19.99 for $19.99).
     ///
     /// This provides a precise decimal representation without floating-point loss.
     public var decimalAmount: Decimal {
@@ -159,6 +166,35 @@ extension Money: CustomStringConvertible {
     }
 }
 
+// MARK: - Sign
+
+extension Money {
+    /// Whether the amount is zero.
+    public var isZero: Bool {
+        amount == 0
+    }
+
+    /// Whether the amount is greater than zero.
+    public var isPositive: Bool {
+        amount > 0
+    }
+
+    /// Whether the amount is less than zero.
+    public var isNegative: Bool {
+        amount < 0
+    }
+
+    /// Whether the amount is zero or greater.
+    public var isPositiveOrZero: Bool {
+        amount >= 0
+    }
+
+    /// Whether the amount is zero or less.
+    public var isNegativeOrZero: Bool {
+        amount <= 0
+    }
+}
+
 // MARK: - Comparable
 
 extension Money: Comparable {
@@ -197,18 +233,29 @@ extension Money {
     enum CodingKeys: String, CodingKey {
         case amount
         case currencyCode
+        case decimalPlaces
     }
 
+    /// `decimalPlaces` is optional: absent means the code's default.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let amount = try container.decode(Int.self, forKey: .amount)
-        let currencyCode = try container.decode(String.self, forKey: .currencyCode)
-        try self.init(amount: amount, currencyCode: currencyCode)
+        try self.init(
+            amount: container.decode(Int.self, forKey: .amount),
+            currency: Currency(
+                code: container.decode(String.self, forKey: .currencyCode),
+                decimalPlaces: container.decodeIfPresent(Int.self, forKey: .decimalPlaces)
+            )
+        )
     }
 
+    /// Writes `decimalPlaces` only for a custom scale, so payloads for
+    /// default currencies stay `{"amount":…,"currencyCode":…}`.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(amount, forKey: .amount)
         try container.encode(currency.code, forKey: .currencyCode)
+        if !currency.hasDefaultDecimalPlaces {
+            try container.encode(currency.decimalPlaces, forKey: .decimalPlaces)
+        }
     }
 }

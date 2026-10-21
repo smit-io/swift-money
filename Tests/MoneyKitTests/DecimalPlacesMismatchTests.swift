@@ -47,18 +47,6 @@ struct DecimalPlacesMismatchTests {
 
         #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try a + b }))
         #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try a - b }))
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try a.minus(b) }))
-    }
-
-    @Test("SignedMoney and mixed operators throw decimalPlacesMismatch")
-    func signedArithmetic() throws {
-        let signed = try SignedMoney(amount: -500, currency: usd4)
-        let money = try Money(amount: 100, currency: usd2)
-
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try signed + money.signed }))
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try signed - money.signed }))
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try signed + money }))
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try money - signed }))
     }
 
     @Test("Sums throw decimalPlacesMismatch on an element at other decimal places")
@@ -66,25 +54,18 @@ struct DecimalPlacesMismatchTests {
         let mixed = [try Money(amount: 100, currency: usd2), try Money(amount: 100, currency: usd4)]
 
         #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try mixed.sum(in: .USD) }))
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try mixed.map(\.signed).sum(in: .USD) }))
+        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try mixed.map { $0.toBigMoney() }.sum(in: .USD) }))
     }
 
-    @Test("MoneyCalculation addition and subtraction throw decimalPlacesMismatch")
-    func calculations() throws {
-        let a = try Money(amount: 1000, currency: usd2) * 1.5
-        let b = try Money(amount: 1000, currency: usd4) * 1.5
+    @Test("BigMoney arithmetic and comparison reject decimalPlacesMismatch")
+    func bigMoney() throws {
+        let a = try Money(amount: 1000, currency: usd2).toBigMoney()
+        let b = try Money(amount: 1000, currency: usd4)
 
         #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try a + b }))
         #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try a - b }))
-    }
-
-    @Test("Safe arithmetic returns nil")
-    func safeArithmetic() throws {
-        let a = try Money(amount: 500, currency: usd4)
-        let b = try Money(amount: 100, currency: usd2)
-
-        #expect(a.tryAdd(b) == nil)
-        #expect(a.trySubtract(b) == nil)
+        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try a + b.toBigMoney() }))
+        #expect(a.tryCompare(b.toBigMoney()) == nil)
     }
 
     // MARK: - Error choice and message

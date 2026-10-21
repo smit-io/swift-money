@@ -28,7 +28,10 @@ public enum RoundingMode: Sendable, Codable, Hashable {
     /// Default rounding mode for tax calculations (commonly round down)
     public static let taxDefault: RoundingMode = .down
 
-    internal var nsRoundingMode: NSDecimalNumber.RoundingMode {
+    /// The Foundation mode that rounds `value` this way. `NSDecimalRound`'s
+    /// `.down`/`.up` are floor/ceiling, so the zero-relative modes depend on
+    /// the sign of the value being rounded.
+    internal func nsRoundingMode(for value: Decimal) -> NSDecimalNumber.RoundingMode {
         switch self {
         case .up:
             return .up
@@ -39,9 +42,9 @@ public enum RoundingMode: Sendable, Codable, Hashable {
         case .halfUp:
             return .plain
         case .towardZero:
-            return .down
+            return value < 0 ? .up : .down
         case .awayFromZero:
-            return .up
+            return value < 0 ? .down : .up
         }
     }
 }
