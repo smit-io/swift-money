@@ -187,8 +187,17 @@ struct MoneyArithmeticTests {
     func distributeInvalid(fixture: CurrencyFixture) throws {
         let money = try fixture.money(100)
 
-        #expect(throws: MoneyError.self) { try money.distribute(into: 0) }
-        #expect(throws: MoneyError.self) { try money.distribute(into: -1) }
+        let zero = #expect(throws: MoneyError.self) { try money.distribute(into: 0) }
+        if case .divisionByZero = zero {} else {
+            Issue.record("Expected divisionByZero, got \(String(describing: zero))")
+        }
+        for parts in [-1, -3, Int.min] {
+            let error = #expect(throws: MoneyError.self) { try money.distribute(into: parts) }
+            guard case .negativePartCount(parts) = error else {
+                Issue.record("Expected negativePartCount(\(parts)), got \(String(describing: error))")
+                continue
+            }
+        }
     }
 
     // MARK: - Allocation
@@ -242,10 +251,73 @@ struct MoneyArithmeticTests {
 
     @Test("allocate rejects empty or all-zero ratios", arguments: CurrencyFixture.all)
     func allocateInvalid(fixture: CurrencyFixture) throws {
-        let money = try fixture.money(-100)
+        for amount in [100, -100, 0] {
+            let money = try fixture.money(amount)
+            for ratios in [[], [0], [0, 0]] {
+                let error = #expect(throws: MoneyError.self) { try money.allocate(by: ratios) }
+                guard case .divisionByZero = error else {
+                    Issue.record("Expected divisionByZero for \(ratios), got \(String(describing: error))")
+                    continue
+                }
+            }
+        }
+    }
 
-        #expect(throws: MoneyError.self) { try money.allocate(by: []) }
-        #expect(throws: MoneyError.self) { try money.allocate(by: [0, 0]) }
+    @Test("allocate rejects negative ratios, reporting the first", arguments: CurrencyFixture.all)
+    func allocateNegativeRatios(fixture: CurrencyFixture) throws {
+        for amount in [100, -100, 0] {
+            let money = try fixture.money(amount)
+            // Positive totals, negative totals, all zeros besides, and
+            // a negative ratio that would otherwise overflow the sum.
+            for (ratios, first) in [
+                ([-1], -1),
+                ([2, -1], -1),
+                ([-1, 2], -1),
+                ([1, -2, -3], -2),
+                ([-1, -1], -1),
+                ([0, -1, 0], -1),
+                ([Int.max, Int.min], Int.min),
+            ] {
+                let error = #expect(throws: MoneyError.self) { try money.allocate(by: ratios) }
+                guard case .negativeRatio(first) = error else {
+                    Issue.record("Expected negativeRatio(\(first)) for \(ratios), got \(String(describing: error))")
+                    continue
+                }
+            }
+        }
+    }
+
+    @Test("allocate throws when the ratios sum beyond Int.max", arguments: CurrencyFixture.all)
+    func allocateRatioOverflow(fixture: CurrencyFixture) throws {
+        let money = try fixture.money(100)
+
+        for ratios in [[Int.max, 1], [Int.max / 2 + 1, Int.max / 2 + 1], [1, Int.max]] {
+            let error = #expect(throws: MoneyError.self) { try money.allocate(by: ratios) }
+            guard case .amountOverflow = error else {
+                Issue.record("Expected amountOverflow for \(ratios), got \(String(describing: error))")
+                continue
+            }
+        }
+    }
+
+    @Test("allocate takes ratios summing to exactly Int.max", arguments: CurrencyFixture.all)
+    func allocateLargeRatios(fixture: CurrencyFixture) throws {
+        for (amount, ratios, expected) in [
+            (100, [Int.max], [100]),
+            (100, [Int.max - 1, 1], [100, 0]),
+            (-100, [1, Int.max - 1], [-1, -99]),
+            (Int.max, [Int.max - 1, 1], [Int.max - 1, 1]),
+            (-Int.max, [Int.max / 2, Int.max / 2 + 1], [-(Int.max / 2), -(Int.max / 2 + 1)]),
+        ] {
+            #expect(try fixture.money(amount).allocate(by: ratios).map(\.amount) == expected, "\(amount) by \(ratios)")
+        }
+
+        for amount in [Int.max, -Int.max, Int.max - 1000, 1, -7] {
+            let total = try fixture.money(amount)
+            for ratios in [[Int.max / 3, Int.max / 3, Int.max / 3 + 1], [Int.max - 2, 1, 1], [Int.max / 7, 0, Int.max / 7 * 6]] {
+                #expect(try total.allocate(by: ratios).sum(in: fixture.currency) == total, "\(amount) by \(ratios)")
+            }
+        }
     }
 
     // MARK: - Summation

@@ -37,6 +37,9 @@ joda-money. See the migration table in `ARITHMETIC_GUIDE.md`.
   `BigDecimal.valueOf(double)`, so `0.07` is exactly 0.07 (`Decimal(0.07)`
   is `0.07000000000000001024`). NaN, infinity, and out-of-range values throw
   the new `MoneyError.invalidDecimal`.
+- `MoneyError.negativeRatio` and `MoneyError.negativePartCount`, thrown by
+  `allocate(by:)` for a negative ratio and `distribute(into:)` for a
+  negative part count.
 
 ### Removed
 - **Breaking:** `SignedMoney`, `Money.minus(_:)`, `Money.signed`, and the
@@ -51,6 +54,12 @@ joda-money. See the migration table in `ARITHMETIC_GUIDE.md`.
 - **Breaking:** `MoneyError.negativeAmount`.
 
 ### Fixed
+- `allocate(by:)` with a negative ratio threw `amountOverflow` ("share
+  exceeds Int.max") or `divisionByZero` depending on the other ratios; it
+  now throws `negativeRatio`. `distribute(into:)` with a negative count
+  threw `divisionByZero`; it now throws `negativePartCount`.
+- `allocate(by:)` trapped when the ratios summed beyond `Int.max`; it now
+  throws `amountOverflow`.
 - `RoundingMode.towardZero` and `.awayFromZero` rounded negative values
   as floor and ceiling. They now follow the magnitude.
 - `numericString` and `formatted` rounded to about 15 significant digits

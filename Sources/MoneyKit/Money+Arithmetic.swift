@@ -146,7 +146,9 @@ extension Money {
     /// value gives negative parts.
     ///
     /// - Parameter parts: The number of parts (must be > 0).
-    /// - Throws: `MoneyError.divisionByZero` if parts is zero or negative.
+    /// - Throws:
+    ///   - `MoneyError.divisionByZero` if parts is zero.
+    ///   - `MoneyError.negativePartCount` if parts is negative.
     ///
     /// Example:
     /// ```swift
@@ -155,6 +157,9 @@ extension Money {
     /// // [34, 33, 33] cents
     /// ```
     public func distribute(into parts: Int) throws -> [Money] {
+        guard parts >= 0 else {
+            throw MoneyError.negativePartCount(parts)
+        }
         guard parts > 0 else {
             throw MoneyError.divisionByZero
         }
@@ -171,7 +176,10 @@ extension Money {
     ///
     /// - Parameter ratios: Non-negative integers giving each part's weight.
     /// - Returns: The parts, in the order of `ratios`.
-    /// - Throws: `MoneyError.divisionByZero` if ratios is empty or contains only zeros.
+    /// - Throws:
+    ///   - `MoneyError.negativeRatio` if any ratio is negative.
+    ///   - `MoneyError.amountOverflow` if the ratios sum beyond `Int.max`.
+    ///   - `MoneyError.divisionByZero` if ratios is empty or contains only zeros.
     ///
     /// Example:
     /// ```swift
@@ -180,11 +188,17 @@ extension Money {
     /// // [70, 30] cents
     /// ```
     public func allocate(by ratios: [Int]) throws -> [Money] {
-        guard !ratios.isEmpty else {
-            throw MoneyError.divisionByZero
+        var total = 0
+        for ratio in ratios {
+            guard ratio >= 0 else {
+                throw MoneyError.negativeRatio(ratio)
+            }
+            let (sum, overflow) = total.addingReportingOverflow(ratio)
+            guard !overflow else {
+                throw MoneyError.amountOverflow(description: "Allocation ratios sum beyond Int.max")
+            }
+            total = sum
         }
-
-        let total = ratios.reduce(0, +)
         guard total > 0 else {
             throw MoneyError.divisionByZero
         }
@@ -220,6 +234,7 @@ extension Money {
         // Each share is within 0...magnitude, so it and its negation are valid amounts.
         return shares.map { Money(unchecked: isNegative ? -$0 : $0, currency: currency) }
     }
+
 }
 
 // MARK: - Summation

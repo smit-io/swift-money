@@ -348,6 +348,14 @@ do {
 }
 
 do {
+    // Allocation ratios must be zero or greater
+    let money = try Money(amount: 100, currency: .USD)
+    let parts = try money.allocate(by: [2, -1])
+} catch MoneyError.negativeRatio(let ratio) {
+    print("Negative ratio: \(ratio)")
+}
+
+do {
     // Invalid currency code
     let invalid = try Currency(code: "INVALID")
 } catch CurrencyError.invalidFormat(let code) {

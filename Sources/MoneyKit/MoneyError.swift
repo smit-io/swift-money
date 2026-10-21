@@ -22,6 +22,12 @@ public enum MoneyError: LocalizedError, Sendable {
     /// A `Double` has no `Decimal` value: NaN, infinity, or out of `Decimal`'s range.
     case invalidDecimal(Double)
 
+    /// `allocate(by:)` was given a negative ratio.
+    case negativeRatio(Int)
+
+    /// `distribute(into:)` was asked for a negative number of parts.
+    case negativePartCount(Int)
+
     public var errorDescription: String? {
         switch self {
         case .invalidCurrencyCode(let code):
@@ -36,6 +42,10 @@ public enum MoneyError: LocalizedError, Sendable {
             return "Amount overflow: \(description)"
         case .invalidDecimal(let value):
             return "Invalid decimal: \(value) has no Decimal representation."
+        case .negativeRatio(let ratio):
+            return "Negative ratio: \(ratio). Allocation ratios must be zero or greater."
+        case .negativePartCount(let parts):
+            return "Negative part count: \(parts). Distribution needs at least one part."
         }
     }
 }
