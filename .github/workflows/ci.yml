@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+permissions:
+  contents: read
+
 jobs:
   test-macos:
     name: Test on macOS
@@ -26,3 +29,69 @@ jobs:
 
     - name: Build and Test
       run: swift test -v
+
+  # Runs after every push to main (direct or PR merge) once both test jobs pass.
+  # The version is the newest "## [X.Y.Z]" heading in CHANGELOG.md; if no tag
+  # exists for it yet, the tag and GitHub release are created from this commit.
+  release:
+    name: Release
+    needs: [ test-macos, test-linux ]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Read version from CHANGELOG
+      id: version
+      run: |
+        version=$(sed -nE 's/^## \[([0-9]+\.[0-9]+\.[0-9]+)\].*/\1/p' CHANGELOG.md | head -n 1)
+        if [ -z "$version" ]; then
+          echo "::error::No released version heading (## [X.Y.Z]) found in CHANGELOG.md"
+          exit 1
+        fi
+
+        if git rev-parse -q --verify "refs/tags/$version" > /dev/null; then
+          echo "Tag $version already exists; nothing to release."
+          echo "release=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        latest=$(git tag --list '[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
+        if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$version" | sort -V | tail -n 1)" != "$version" ]; then
+          echo "::error::CHANGELOG version $version is older than the latest tag $latest"
+          exit 1
+        fi
+
+        echo "New version $version (latest tag: ${latest:-none})"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "release=true" >> "$GITHUB_OUTPUT"
+
+    - name: Extract release notes
+      if: steps.version.outputs.release == 'true'
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        awk -v heading="## [$VERSION]" '
+          index($0, heading) == 1 { found = 1; next }
+          found && /^## \[/ { exit }
+          found { print }
+        ' CHANGELOG.md > release-notes.md
+        cat release-notes.md
+
+    - name: Create tag and GitHub release
+      if: steps.version.outputs.release == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        gh release create "$VERSION" \
+          --target "$GITHUB_SHA" \
+          --title "$VERSION" \
+          --notes-file release-notes.md
