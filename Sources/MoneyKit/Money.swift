@@ -165,11 +165,13 @@ extension Money: Comparable {
     /// Compares two Money values.
     ///
     /// - Note: Only Money values with the same currency can be compared.
-    ///         Comparing different currencies will result in a precondition failure.
+    ///         Comparing different currencies (or the same code at different
+    ///         decimal places) will result in a precondition failure.
     ///         Use `tryCompare(_:)` for safe comparison that returns nil on mismatch.
     public static func < (lhs: Money, rhs: Money) -> Bool {
-        precondition(lhs.currency == rhs.currency,
-                     "Cannot compare Money values with different currencies: \(lhs.currency.code) vs \(rhs.currency.code)")
+        if let mismatch = lhs.currency.mismatch(with: rhs.currency) {
+            preconditionFailure("Cannot compare Money values. \(mismatch.errorDescription ?? "")")
+        }
         return lhs.amount < rhs.amount
     }
 

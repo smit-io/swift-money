@@ -123,9 +123,7 @@ public struct MoneyCalculation: Sendable {
 
     /// Add two calculations
     public static func + (lhs: MoneyCalculation, rhs: MoneyCalculation) throws -> MoneyCalculation {
-        guard lhs.currency == rhs.currency else {
-            throw MoneyError.currencyMismatch(from: lhs.currency, to: rhs.currency)
-        }
+        try lhs.currency.requireSame(as: rhs.currency)
         return MoneyCalculation(
             decimalAmount: lhs.decimalAmount + rhs.decimalAmount,
             currency: lhs.currency
@@ -134,9 +132,7 @@ public struct MoneyCalculation: Sendable {
 
     /// Subtract two calculations
     public static func - (lhs: MoneyCalculation, rhs: MoneyCalculation) throws -> MoneyCalculation {
-        guard lhs.currency == rhs.currency else {
-            throw MoneyError.currencyMismatch(from: lhs.currency, to: rhs.currency)
-        }
+        try lhs.currency.requireSame(as: rhs.currency)
         return MoneyCalculation(
             decimalAmount: lhs.decimalAmount - rhs.decimalAmount,
             currency: lhs.currency

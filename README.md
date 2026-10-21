@@ -13,7 +13,7 @@ A type-safe Swift library for representing and manipulating monetary values with
 - 🛡️ **Overflow Protection**: Built-in overflow detection for all arithmetic operations
 - 🌐 **Localization**: Automatic currency formatting based on locale
 - 📊 **Rich API**: Arithmetic operations, splitting, allocation, and percentage calculations
-- ✅ **Well Tested**: Comprehensive test suite with 141 tests
+- ✅ **Well Tested**: Comprehensive test suite with 150 tests
 
 ## Requirements
 
@@ -373,6 +373,16 @@ do {
 }
 
 do {
+    // Same code, different decimal places: a Currency built with a custom
+    // decimalPlaces is a different scale, so 34590 means $3.4590, not $345.90
+    let custom = try Currency(code: "USD", decimalPlaces: 4)
+    let fuelPrice = try Money(amount: 34590, currency: custom)
+    let total = try fuelPrice + Money(amount: 100, currency: .USD)
+} catch MoneyError.decimalPlacesMismatch(let code, let lhs, let rhs) {
+    print("\(code) is configured with \(lhs) and \(rhs) decimal places")
+}
+
+do {
     // Overflow detection
     let large = try Money(amount: Int.max - 100, currency: .JPY)
     let overflow = try large + try Money(amount: 200, currency: .JPY)
@@ -670,7 +680,7 @@ swift test
 ```
 
 Test coverage:
-- ✅ 141 tests across 6 test suites
+- ✅ 150 tests across 7 test suites
 - ✅ Currency validation and equality
 - ✅ Money arithmetic and overflow detection
 - ✅ Rounding modes and calculations

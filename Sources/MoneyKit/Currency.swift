@@ -22,6 +22,9 @@ public struct Currency: Sendable, Hashable, Codable {
     /// - Parameters:
     ///   - code: The ISO 4217 currency code (must be exactly 3 alphabetic characters).
     ///   - decimalPlaces: The number of decimal places (defaults based on currency).
+    ///     A custom value makes a different currency: it is not equal to the
+    ///     default one, and combining their amounts throws
+    ///     `MoneyError.decimalPlacesMismatch`.
     /// - Throws: `CurrencyError.invalidFormat` if the code is not valid, or
     ///   `CurrencyError.invalidDecimalPlaces` if decimalPlaces is outside 0...30.
     public init(code: String, decimalPlaces: Int? = nil) throws {
@@ -141,8 +144,11 @@ extension Currency {
 // MARK: - Equatable
 
 extension Currency {
+    /// Two currencies are equal when both the code and the decimal places match.
+    /// A `Money` amount is an integer in the smallest unit, so the same code at
+    /// different decimal places gives the same integer a different value.
     public static func == (lhs: Currency, rhs: Currency) -> Bool {
-        lhs.code == rhs.code
+        lhs.code == rhs.code && lhs.decimalPlaces == rhs.decimalPlaces
     }
 }
 
@@ -151,5 +157,35 @@ extension Currency {
 extension Currency {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(code)
+        hasher.combine(decimalPlaces)
+    }
+}
+
+// MARK: - Same-Currency Check
+
+extension Currency {
+    /// Why `other` can't be combined with this currency, or `nil` when it can.
+    ///
+    /// Different codes are a `currencyMismatch`; the same code at different
+    /// decimal places is a `decimalPlacesMismatch`.
+    func mismatch(with other: Currency) -> MoneyError? {
+        guard code == other.code else {
+            return .currencyMismatch(from: self, to: other)
+        }
+        guard decimalPlaces == other.decimalPlaces else {
+            return .decimalPlacesMismatch(code: code, lhs: decimalPlaces, rhs: other.decimalPlaces)
+        }
+        return nil
+    }
+
+    /// Throws unless `other` is the same currency at the same decimal places.
+    ///
+    /// - Throws:
+    ///   - `MoneyError.currencyMismatch` if the codes differ.
+    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
+    func requireSame(as other: Currency) throws {
+        if let mismatch = mismatch(with: other) {
+            throw mismatch
+        }
     }
 }

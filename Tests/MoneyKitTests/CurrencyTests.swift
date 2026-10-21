@@ -134,18 +134,13 @@ struct CurrencyTests {
         #expect(decoded.decimalPlaces == 2)
     }
 
-    @Test("Currency hash consistency with custom decimal places")
-    func hashConsistencyWithCustomDecimals() throws {
-        // Two currencies with same code but different decimal places
-        // should be equal and have same hash (equality is code-only)
+    @Test("Currencies with the same code but different decimal places are not equal")
+    func equalityWithCustomDecimals() throws {
         let c1 = try Currency(code: "XXX", decimalPlaces: 2)
         let c2 = try Currency(code: "XXX", decimalPlaces: 4)
 
-        // They should be equal (code-only comparison)
-        #expect(c1 == c2)
-
-        // They MUST have the same hash value to maintain hash/equality contract
-        #expect(c1.hashValue == c2.hashValue)
+        #expect(c1 != c2)
+        #expect(c1 == (try Currency(code: "XXX", decimalPlaces: 2)))
     }
 
     @Test("Currency Set operations with custom decimals")
@@ -156,8 +151,8 @@ struct CurrencyTests {
         var set: Set<Currency> = [c1]
         set.insert(c2)
 
-        // Should only have one element since c1 == c2
-        #expect(set.count == 1)
+        // Two elements: the decimal places make them different currencies
+        #expect(set.count == 2)
         #expect(set.contains(c1))
         #expect(set.contains(c2))
     }
@@ -171,9 +166,9 @@ struct CurrencyTests {
         dict[c1] = "first"
         dict[c2] = "second"
 
-        // Should only have one entry since c1 == c2
-        #expect(dict.count == 1)
-        #expect(dict[c1] == "second")  // c2's value overwrites c1
+        // Two entries: c2 doesn't overwrite c1
+        #expect(dict.count == 2)
+        #expect(dict[c1] == "first")
         #expect(dict[c2] == "second")
     }
 

@@ -95,11 +95,10 @@ extension SignedMoney {
     ///
     /// - Throws:
     ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
     ///   - `MoneyError.amountOverflow` if the sum overflows.
     public static func + (lhs: SignedMoney, rhs: SignedMoney) throws -> SignedMoney {
-        guard lhs.currency == rhs.currency else {
-            throw MoneyError.currencyMismatch(from: lhs.currency, to: rhs.currency)
-        }
+        try lhs.currency.requireSame(as: rhs.currency)
 
         let (result, overflow) = lhs.amount.addingReportingOverflow(rhs.amount)
         guard !overflow else {
@@ -116,6 +115,7 @@ extension SignedMoney {
     ///
     /// - Throws:
     ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
     ///   - `MoneyError.amountOverflow` if the difference overflows.
     public static func - (lhs: SignedMoney, rhs: SignedMoney) throws -> SignedMoney {
         try lhs + -rhs
@@ -175,6 +175,7 @@ extension SignedMoney {
     ///
     /// - Throws:
     ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
     ///   - `MoneyError.amountOverflow` if the sum overflows.
     public static func + (lhs: SignedMoney, rhs: Money) throws -> SignedMoney {
         try lhs + rhs.signed
@@ -184,6 +185,7 @@ extension SignedMoney {
     ///
     /// - Throws:
     ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
     ///   - `MoneyError.amountOverflow` if the difference overflows.
     public static func - (lhs: SignedMoney, rhs: Money) throws -> SignedMoney {
         try lhs - rhs.signed
@@ -193,6 +195,7 @@ extension SignedMoney {
     ///
     /// - Throws:
     ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
     ///   - `MoneyError.amountOverflow` if the sum overflows.
     public static func + (lhs: Money, rhs: SignedMoney) throws -> SignedMoney {
         try lhs.signed + rhs
@@ -202,6 +205,7 @@ extension SignedMoney {
     ///
     /// - Throws:
     ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
     ///   - `MoneyError.amountOverflow` if the difference overflows.
     public static func - (lhs: Money, rhs: SignedMoney) throws -> SignedMoney {
         try lhs.signed - rhs
@@ -220,10 +224,9 @@ extension SignedMoney: Comparable {
     ///
     /// - Precondition: Both values must have the same currency.
     public static func < (lhs: SignedMoney, rhs: SignedMoney) -> Bool {
-        precondition(
-            lhs.currency == rhs.currency,
-            "Cannot compare SignedMoney with different currencies: \(lhs.currency.code) vs \(rhs.currency.code)"
-        )
+        if let mismatch = lhs.currency.mismatch(with: rhs.currency) {
+            preconditionFailure("Cannot compare SignedMoney values. \(mismatch.errorDescription ?? "")")
+        }
         return lhs.amount < rhs.amount
     }
 }

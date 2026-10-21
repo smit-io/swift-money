@@ -11,6 +11,11 @@ public enum MoneyError: LocalizedError, Sendable {
     /// Attempted to perform an operation on Money values with different currencies.
     case currencyMismatch(from: Currency, to: Currency)
 
+    /// Attempted to combine values of the same currency code at different decimal
+    /// places: a `Currency` was built with a custom `decimalPlaces`, so the same
+    /// integer amount means a different value on each side.
+    case decimalPlacesMismatch(code: String, lhs: Int, rhs: Int)
+
     /// Division by zero was attempted.
     case divisionByZero
 
@@ -25,6 +30,8 @@ public enum MoneyError: LocalizedError, Sendable {
             return "Amount cannot be negative: \(amount)."
         case .currencyMismatch(let from, let to):
             return "Currency mismatch: cannot operate on \(from.code) and \(to.code)."
+        case .decimalPlacesMismatch(let code, let lhs, let rhs):
+            return "Decimal places mismatch: \(code) is configured with \(lhs) and \(rhs) decimal places. A Currency was built with a custom decimalPlaces, so the amounts are at different scales."
         case .divisionByZero:
             return "Division by zero is not allowed."
         case .amountOverflow(let description):

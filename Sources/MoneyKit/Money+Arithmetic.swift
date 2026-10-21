@@ -11,11 +11,10 @@ extension Money {
     /// - Returns: A new Money value representing the sum.
     /// - Throws:
     ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
     ///   - `MoneyError.amountOverflow` if the sum overflows.
     public static func + (lhs: Money, rhs: Money) throws -> Money {
-        guard lhs.currency == rhs.currency else {
-            throw MoneyError.currencyMismatch(from: lhs.currency, to: rhs.currency)
-        }
+        try lhs.currency.requireSame(as: rhs.currency)
 
         let (result, overflow) = lhs.amount.addingReportingOverflow(rhs.amount)
         guard !overflow else {
@@ -35,11 +34,10 @@ extension Money {
     /// - Returns: A new Money value representing the difference.
     /// - Throws:
     ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
     ///   - `MoneyError.negativeAmount` if the result would be negative.
     public static func - (lhs: Money, rhs: Money) throws -> Money {
-        guard lhs.currency == rhs.currency else {
-            throw MoneyError.currencyMismatch(from: lhs.currency, to: rhs.currency)
-        }
+        try lhs.currency.requireSame(as: rhs.currency)
         let result = lhs.amount - rhs.amount
         return try Money(amount: result, currency: lhs.currency)
     }
@@ -261,11 +259,11 @@ extension Money {
     /// Unlike `-`, this never throws `MoneyError.negativeAmount` — the sign
     /// lands in the returned `SignedMoney`.
     ///
-    /// - Throws: `MoneyError.currencyMismatch` if the currencies don't match.
+    /// - Throws:
+    ///   - `MoneyError.currencyMismatch` if the currencies don't match.
+    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
     public func minus(_ other: Money) throws -> SignedMoney {
-        guard currency == other.currency else {
-            throw MoneyError.currencyMismatch(from: currency, to: other.currency)
-        }
+        try currency.requireSame(as: other.currency)
 
         return try SignedMoney(amount: amount - other.amount, currency: currency)
     }
@@ -279,6 +277,7 @@ extension Sequence where Element == Money {
     ///
     /// - Throws:
     ///   - `MoneyError.currencyMismatch` if any element differs from `currency`.
+    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
     ///   - `MoneyError.amountOverflow` if the running total overflows.
     public func sum(in currency: Currency) throws -> Money {
         try reduce(Money(amount: 0, currency: currency), +)
@@ -291,6 +290,7 @@ extension Sequence where Element == SignedMoney {
     ///
     /// - Throws:
     ///   - `MoneyError.currencyMismatch` if any element differs from `currency`.
+    ///   - `MoneyError.decimalPlacesMismatch` if the codes match but the decimal places differ.
     ///   - `MoneyError.amountOverflow` if the running total overflows.
     public func sum(in currency: Currency) throws -> SignedMoney {
         try reduce(SignedMoney.zero(currency), +)

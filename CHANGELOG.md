@@ -5,6 +5,26 @@ All notable changes to MoneyKit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Breaking:** `Currency` equality and hashing compare `decimalPlaces` as
+  well as `code`. A `Money` amount is an integer in the smallest unit, so
+  `USD` at 4 decimal places and `USD` at 2 give the same integer different
+  values; they were equal before, so `Money(34590, USD at 4)` (`$3.4590`)
+  equalled `Money(34590, .USD)` (`$345.90`) and adding them silently mixed
+  scales. Such currencies are now different `Set` / `Dictionary` keys too.
+  Currencies at their default decimal places are unaffected.
+
+### Added
+- **Breaking:** `MoneyError.decimalPlacesMismatch(code:lhs:rhs:)`, thrown
+  when combining values whose currencies share a code but not decimal places
+  (`+`, `-`, `minus(_:)`, `sum(in:)`, the mixed `Money` / `SignedMoney`
+  operators, and `MoneyCalculation` `+` / `-`). Different codes still throw
+  `currencyMismatch`. A new enum case breaks an exhaustive `switch` over
+  `MoneyError` with no `default`. `Comparable`'s precondition message names
+  the same two cases; `tryAdd` / `trySubtract` / `tryCompare` return `nil`.
+
 ## [1.4.0] - 2026-10-21
 
 ### Added

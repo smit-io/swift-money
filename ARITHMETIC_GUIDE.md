@@ -239,6 +239,10 @@ do {
 }
 ```
 
+The same code at different decimal places is a mismatch too, reported as
+`MoneyError.decimalPlacesMismatch(code:lhs:rhs:)` (a `Currency` built with a
+custom `decimalPlaces` is a different scale, and equality compares both).
+
 ### Negative Amounts
 
 ```swift
