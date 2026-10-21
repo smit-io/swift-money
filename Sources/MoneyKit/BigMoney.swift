@@ -190,8 +190,8 @@ extension BigMoney: Comparable {
     ///         places) is a precondition failure. Use `tryCompare(_:)` for a
     ///         comparison that returns nil on mismatch.
     public static func < (lhs: BigMoney, rhs: BigMoney) -> Bool {
-        if let mismatch = lhs.currency.mismatch(with: rhs.currency) {
-            preconditionFailure("Cannot compare BigMoney values. \(mismatch.errorDescription ?? "")")
+        if let failure = lhs.currency.comparisonFailure(with: rhs.currency, comparing: "BigMoney") {
+            preconditionFailure(failure)
         }
         return lhs.amount < rhs.amount
     }

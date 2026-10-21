@@ -211,20 +211,9 @@ extension Money {
         var remainder = magnitude
 
         for ratio in ratios {
-            var share = Decimal(magnitude) * Decimal(ratio) / Decimal(total)
-            var rounded = Decimal()
-            NSDecimalRound(&rounded, &share, 0, .down)
-
-            // Check for overflow BEFORE conversion (int64Value saturates at Int64.max)
-            guard rounded >= 0 && rounded <= Decimal(Int.max) else {
-                throw MoneyError.amountOverflow(
-                    description: "Allocation overflow: share exceeds Int.max"
-                )
-            }
-
-            let shareInt = Int(NSDecimalNumber(decimal: rounded).int64Value)
-            shares.append(shareInt)
-            remainder -= shareInt
+            let share = try Self.allocationShare(of: magnitude, ratio: ratio, total: total)
+            shares.append(share)
+            remainder -= share
         }
 
         // Distribute remainder to maintain exact sum. Only non-zero ratios take
@@ -238,6 +227,25 @@ extension Money {
         return shares.map { Money(unchecked: isNegative ? -$0 : $0, currency: currency) }
     }
 
+    /// `magnitude × ratio / total`, rounded down.
+    ///
+    /// `allocate(by:)` only passes `0 <= ratio <= total`, so the share is
+    /// within `0...magnitude`; the range check guards the conversion to `Int`,
+    /// since `int64Value` saturates instead of failing.
+    ///
+    /// - Throws: `MoneyError.amountOverflow` if the share is outside `0...Int.max`.
+    static func allocationShare(of magnitude: Int, ratio: Int, total: Int) throws -> Int {
+        var share = Decimal(magnitude) * Decimal(ratio) / Decimal(total)
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &share, 0, .down)
+
+        guard rounded >= 0 && rounded <= Decimal(Int.max) else {
+            throw MoneyError.amountOverflow(
+                description: "Allocation overflow: share \(rounded) is outside 0...Int.max"
+            )
+        }
+        return Int(NSDecimalNumber(decimal: rounded).int64Value)
+    }
 }
 
 // MARK: - Summation

@@ -300,6 +300,41 @@ struct MoneyArithmeticTests {
         }
     }
 
+    @Test("allocationShare rounds magnitude × ratio / total down")
+    func allocationShare() throws {
+        for (magnitude, ratio, total, expected) in [
+            (100, 1, 3, 33),
+            (100, 2, 3, 66),
+            (100, 0, 3, 0),
+            (100, 3, 3, 100),
+            (0, 1, 1, 0),
+            (Int.max, 1, 1, Int.max),
+            (Int.max, Int.max - 1, Int.max, Int.max - 1),
+            (Int.max, 1, Int.max, 1),
+            (Int.max, 1, 2, Int.max / 2),
+        ] {
+            #expect(try Money.allocationShare(of: magnitude, ratio: ratio, total: total) == expected, "\(magnitude) × \(ratio) / \(total)")
+        }
+    }
+
+    @Test("allocationShare throws instead of saturating outside 0...Int.max")
+    func allocationShareOutOfRange() {
+        // allocate(by:) never passes these (it rejects negative ratios and
+        // ratio <= total always holds); the guard protects the Int conversion.
+        for (magnitude, ratio, total) in [
+            (Int.max, 2, 1),      // 2 × Int.max
+            (Int.max / 2 + 1, 2, 1),  // Int.max + 1
+            (100, -1, 1),         // negative
+            (1, Int.min, 1),      // Int.min
+        ] {
+            let error = #expect(throws: MoneyError.self) { try Money.allocationShare(of: magnitude, ratio: ratio, total: total) }
+            guard case .amountOverflow = error else {
+                Issue.record("Expected amountOverflow for \(magnitude) × \(ratio) / \(total), got \(String(describing: error))")
+                continue
+            }
+        }
+    }
+
     @Test("allocate takes ratios summing to exactly Int.max", arguments: CurrencyFixture.all)
     func allocateLargeRatios(fixture: CurrencyFixture) throws {
         for (amount, ratios, expected) in [

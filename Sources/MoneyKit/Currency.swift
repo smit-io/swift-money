@@ -29,11 +29,7 @@ public struct Currency: Sendable, Hashable, Codable {
     /// - Throws: `CurrencyError.invalidFormat` if the code is not valid, or
     ///   `CurrencyError.invalidDecimalPlaces` if decimalPlaces is outside 0...30.
     public init(code: String, decimalPlaces: Int? = nil) throws {
-        let upperCode = code.uppercased()
-        guard upperCode.count == 3,
-              upperCode.allSatisfy({ $0.isASCII && $0.isLetter }) else {
-            throw CurrencyError.invalidFormat(code)
-        }
+        let upperCode = try Self.normalizedCode(code)
 
         let places = decimalPlaces ?? Self.defaultDecimalPlaces(for: upperCode)
         // Beyond ~30, Decimal's exponent range silently degrades the divisor
@@ -51,9 +47,19 @@ public struct Currency: Sendable, Hashable, Codable {
     ///
     /// - Throws: `CurrencyError.invalidFormat` if validation fails.
     public func validate() throws {
-        guard code.count == 3, code.allSatisfy({ $0.isASCII && $0.isLetter }) else {
+        _ = try Self.normalizedCode(code)
+    }
+
+    /// The code uppercased, if it is exactly 3 ASCII letters.
+    ///
+    /// - Throws: `CurrencyError.invalidFormat` with the code as given.
+    static func normalizedCode(_ code: String) throws -> String {
+        let upperCode = code.uppercased()
+        guard upperCode.count == 3,
+              upperCode.allSatisfy({ $0.isASCII && $0.isLetter }) else {
             throw CurrencyError.invalidFormat(code)
         }
+        return upperCode
     }
 
     /// Returns the default decimal places for a given currency code.
@@ -194,5 +200,13 @@ extension Currency {
         if let mismatch = mismatch(with: other) {
             throw mismatch
         }
+    }
+
+    /// The message `<` stops with when values in these currencies can't be
+    /// compared, or nil if they can.
+    ///
+    /// - Parameter typeName: The type being compared, e.g. "Money".
+    func comparisonFailure(with other: Currency, comparing typeName: String) -> String? {
+        mismatch(with: other).map { "Cannot compare \(typeName) values. \($0.localizedDescription)" }
     }
 }

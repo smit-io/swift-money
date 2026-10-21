@@ -174,7 +174,12 @@ public struct Money: Sendable, Hashable, Codable {
                     .precision(.fractionLength(currency.decimalPlaces))
             )
         }
+        return formatWithNumberFormatter(locale: locale)
+    }
 
+    /// The formatting path before iOS 15 / macOS 12. Internal so tests can
+    /// run it on any OS.
+    func formatWithNumberFormatter(locale: Locale) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencyCode = currency.code
@@ -233,8 +238,8 @@ extension Money: Comparable {
     ///         decimal places) will result in a precondition failure.
     ///         Use `tryCompare(_:)` for safe comparison that returns nil on mismatch.
     public static func < (lhs: Money, rhs: Money) -> Bool {
-        if let mismatch = lhs.currency.mismatch(with: rhs.currency) {
-            preconditionFailure("Cannot compare Money values. \(mismatch.errorDescription ?? "")")
+        if let failure = lhs.currency.comparisonFailure(with: rhs.currency, comparing: "Money") {
+            preconditionFailure(failure)
         }
         return lhs.amount < rhs.amount
     }

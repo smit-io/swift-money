@@ -104,6 +104,46 @@ struct MoneyTests {
         }
     }
 
+    // MARK: - NumberFormatter fallback (before iOS 15 / macOS 12)
+
+    @Test("The NumberFormatter fallback carries the sign and the digits", arguments: CurrencyFixture.all)
+    func fallbackFormatting(fixture: CurrencyFixture) throws {
+        let negativeSigns = ["-", "\u{2212}", "("]
+
+        for identifier in ["en_US", "de_DE", "ja_JP"] {
+            let locale = Locale(identifier: identifier)
+            let negative = try fixture.money(-1999).formatWithNumberFormatter(locale: locale)
+            let positive = try fixture.money(1999).formatWithNumberFormatter(locale: locale)
+
+            #expect(negativeSigns.contains { negative.contains($0) })
+            #expect(!negativeSigns.contains { positive.contains($0) })
+            #expect(negative.filter(\.isNumber).hasSuffix("1999"))
+        }
+    }
+
+    #if canImport(Darwin)
+    @Test("The fallback matches FormatStyle below 16 decimal places", arguments: CurrencyFixture.all.filter { $0.decimalPlaces < 16 })
+    func fallbackMatchesFormatStyle(fixture: CurrencyFixture) throws {
+        for amount in [0, 1, -1, 1999, -1999, Int.max, -Int.max] {
+            let money = try fixture.money(amount)
+            for identifier in ["en_US", "de_DE", "ja_JP", "ar_SA", "fr_CH"] {
+                let locale = Locale(identifier: identifier)
+                #expect(money.formatWithNumberFormatter(locale: locale) == money.formatted(locale: locale), "\(amount) \(identifier)")
+            }
+        }
+    }
+
+    @Test("The fallback loses digits at 16 or more decimal places, which is why FormatStyle is used", arguments: CurrencyFixture.all.filter { $0.decimalPlaces >= 16 })
+    func fallbackPrecisionLoss(fixture: CurrencyFixture) throws {
+        let money = try fixture.money(Int.max)
+        let locale = Locale(identifier: "en_US")
+
+        // NumberFormatter keeps about 15 significant digits: 9.223372036854780000.
+        #expect(!money.formatWithNumberFormatter(locale: locale).filter(\.isNumber).hasSuffix(String(Int.max)))
+        #expect(money.formatted(locale: locale).filter(\.isNumber).hasSuffix(String(Int.max)))
+    }
+    #endif
+
     // MARK: - Equality and comparison
 
     @Test("Equality and hashing include amount, code, and decimal places", arguments: CurrencyFixture.all)
