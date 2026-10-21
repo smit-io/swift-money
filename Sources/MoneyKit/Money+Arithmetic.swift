@@ -150,9 +150,11 @@ extension Money {
     /// Allocates a Money value according to specified ratios.
     ///
     /// This method distributes the amount proportionally while ensuring
-    /// no money is lost to rounding errors.
+    /// no money is lost to rounding errors. Each share is rounded down, then
+    /// the leftover smallest units go one each to the non-zero ratios, in
+    /// order from the first. A zero ratio always receives zero.
     ///
-    /// - Parameter ratios: An array of positive integers representing the allocation ratios.
+    /// - Parameter ratios: An array of non-negative integers representing the allocation ratios.
     /// - Returns: An array of Money values representing the allocation.
     /// - Throws: `MoneyError.divisionByZero` if ratios is empty or contains only zeros.
     ///
@@ -196,9 +198,11 @@ extension Money {
             remainder -= shareInt
         }
 
-        // Distribute remainder to maintain exact sum
+        // Distribute remainder to maintain exact sum. Only non-zero ratios take
+        // part: a zero ratio's share is exactly zero, so it lost nothing to rounding.
+        let eligible = ratios.indices.filter { ratios[$0] > 0 }
         for i in 0..<remainder {
-            let index = i % allocated.count
+            let index = eligible[i % eligible.count]
             allocated[index] = try Money(amount: allocated[index].amount + 1, currency: currency)
         }
 

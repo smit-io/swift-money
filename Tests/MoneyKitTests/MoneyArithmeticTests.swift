@@ -150,6 +150,45 @@ struct MoneyArithmeticTests {
         #expect(sum == 100)
     }
 
+    @Test("Allocation never gives a remainder unit to a zero ratio")
+    func allocationZeroRatioGetsNothing() throws {
+        let money = try Money(amount: 5, currency: .USD)
+        let parts = try money.allocate(by: [0, 1, 1])
+
+        #expect(parts.map(\.amount) == [0, 3, 2])
+    }
+
+    @Test("Allocation skips zero ratios anywhere in the list", arguments: [
+        ([1, 0, 1, 0, 1], [34, 0, 33, 0, 33]),
+        ([0, 0, 1], [0, 0, 100]),
+        ([0, 2, 0, 1], [0, 67, 0, 33]),
+    ])
+    func allocationZeroRatioPositions(ratios: [Int], expected: [Int]) throws {
+        let money = try Money(amount: 100, currency: .USD)
+        let parts = try money.allocate(by: ratios)
+
+        #expect(parts.map(\.amount) == expected)
+        #expect(parts.reduce(0) { $0 + $1.amount } == 100)
+    }
+
+    @Test("Zero-ratio allocation is the same for currencies without two decimal places", arguments: [
+        ("JPY", 0),
+        ("KRW", 0),
+        ("KWD", 3),
+        ("BHD", 3),
+        ("CLF", 4),
+    ])
+    func allocationZeroRatioOtherDecimalPlaces(code: String, decimalPlaces: Int) throws {
+        let currency = try Currency(code: code)
+        #expect(currency.decimalPlaces == decimalPlaces)
+
+        let money = try Money(amount: 5, currency: currency)
+        let parts = try money.allocate(by: [0, 1, 1])
+
+        #expect(parts.map(\.amount) == [0, 3, 2])
+        #expect(parts.allSatisfy { $0.currency == currency })
+    }
+
     @Test("Allocation with empty ratios throws error")
     func allocationEmptyRatios() throws {
         let money = try Money(amount: 100, currency: .USD)
