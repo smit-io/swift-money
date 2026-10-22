@@ -29,26 +29,115 @@ struct CurrencyTests {
         #expect(eur.code == "EUR")
     }
 
-    @Test("Currency rejects invalid codes")
-    func invalidCurrencyCodes() {
-        #expect(throws: CurrencyError.self) {
-            _ = try Currency(code: "US")  // Too short
+    @Test("Currency rejects invalid codes with invalidFormat, reporting the input", arguments: [
+        "US", "USDD", "", "12D", "US$", "U D", " USD",  // length, digits, symbols, spaces
+        "日本円", "ÄÖÜ", "äbc", "ΑΒΓ", "ǆAB",             // letters, but not ASCII
+    ])
+    func invalidCurrencyCodes(code: String) {
+        for decimalPlaces in [nil, 2] {
+            let error = #expect(throws: CurrencyError.self) { try Currency(code: code, decimalPlaces: decimalPlaces) }
+            guard case .invalidFormat(code) = error else {
+                Issue.record("Expected invalidFormat(\(code)), got \(String(describing: error))")
+                continue
+            }
+        }
+    }
+
+    @Test("normalizedCode uppercases valid codes and rejects the rest with the input", arguments: [
+        ("USD", "USD"), ("usd", "USD"), ("EuR", "EUR"), ("zzz", "ZZZ"),
+        ("US", nil), ("USDD", nil), ("12D", nil), ("日本円", nil), ("ÄÖÜ", nil), ("", nil),
+    ] as [(String, String?)])
+    func normalizedCode(input: String, expected: String?) throws {
+        if let expected {
+            #expect(try Currency.normalizedCode(input) == expected)
+        } else {
+            let error = #expect(throws: CurrencyError.self) { try Currency.normalizedCode(input) }
+            guard case .invalidFormat(input) = error else {
+                Issue.record("Expected invalidFormat(\(input)), got \(String(describing: error))")
+                return
+            }
+        }
+    }
+
+    @Test("validate() passes for every currency that can be built", arguments: CurrencyFixture.all)
+    func validateFixtures(fixture: CurrencyFixture) throws {
+        // init runs the same check, so no Currency can fail validate().
+        try fixture.currency.validate()
+        try JSONDecoder().decode(Currency.self, from: JSONEncoder().encode(fixture.currency)).validate()
+    }
+
+    @Test("decimalPlaces outside 0...30 throws invalidDecimalPlaces", arguments: [-1, -2, 31, 32, 100, Int.min, Int.max])
+    func invalidDecimalPlaces(places: Int) {
+        for code in ["USD", "JPY", "ZZZ"] {
+            let error = #expect(throws: CurrencyError.self) { try Currency(code: code, decimalPlaces: places) }
+            guard case .invalidDecimalPlaces(places) = error else {
+                Issue.record("Expected invalidDecimalPlaces(\(places)) for \(code), got \(String(describing: error))")
+                continue
+            }
+        }
+    }
+
+    @Test("An invalid code is reported before invalid decimal places")
+    func invalidCodeAndDecimalPlaces() {
+        let error = #expect(throws: CurrencyError.self) { try Currency(code: "US", decimalPlaces: 31) }
+        guard case .invalidFormat("US") = error else {
+            Issue.record("Expected invalidFormat(US), got \(String(describing: error))")
+            return
+        }
+    }
+
+    @Test("decimalPlaces 0 and 30 are the inclusive limits")
+    func decimalPlacesLimits() throws {
+        let zero = try Currency(code: "ZZZ", decimalPlaces: 0)
+        #expect(zero.divisor == 1)
+
+        let thirty = try Currency(code: "ZZZ", decimalPlaces: 30)
+        #expect(thirty.divisor == Decimal(sign: .plus, exponent: -30, significand: 1))
+
+        // Every digit survives at the top scale, through BigMoney and Codable too.
+        for amount in [Int.max, -Int.max, 1, -1] {
+            let money = try Money(amount: amount, currency: thirty)
+            let digits = String(amount.magnitude)
+            let expected = (amount < 0 ? "-" : "") + "0." + String(repeating: "0", count: 30 - digits.count) + digits
+            #expect(money.numericString == expected)
+            #expect(try money.toBigMoney().rounded(.down) == money)
+            #expect(try JSONDecoder().decode(Money.self, from: JSONEncoder().encode(money)) == money)
+            #expect(try JSONDecoder().decode(BigMoney.self, from: JSONEncoder().encode(money.toBigMoney())) == money.toBigMoney())
+        }
+    }
+
+    @Test("Decoding validates the code and decimal places like init")
+    func decodingValidates() {
+        func decode<T: Decodable>(_ type: T.Type, _ json: String) -> CurrencyError? {
+            #expect(throws: CurrencyError.self, "\(T.self) \(json)") {
+                try JSONDecoder().decode(type, from: Data(json.utf8))
+            }
         }
 
-        #expect(throws: CurrencyError.self) {
-            _ = try Currency(code: "USDD")  // Too long
+        for places in [-1, 31] {
+            for error in [
+                decode(Currency.self, #"{"code":"USD","decimalPlaces":\#(places)}"#),
+                decode(Money.self, #"{"amount":1,"currencyCode":"USD","decimalPlaces":\#(places)}"#),
+                decode(BigMoney.self, #"{"amount":"1.5","currencyCode":"USD","decimalPlaces":\#(places)}"#),
+            ] {
+                guard case .invalidDecimalPlaces(places) = error else {
+                    Issue.record("Expected invalidDecimalPlaces(\(places)), got \(String(describing: error))")
+                    continue
+                }
+            }
         }
 
-        #expect(throws: CurrencyError.self) {
-            _ = try Currency(code: "12D")  // Contains numbers
-        }
-
-        #expect(throws: CurrencyError.self) {
-            _ = try Currency(code: "US$")  // Contains special chars
-        }
-
-        #expect(throws: CurrencyError.self) {
-            _ = try Currency(code: "")  // Empty
+        for code in ["US", "日本円"] {
+            for error in [
+                decode(Currency.self, #"{"code":"\#(code)","decimalPlaces":2}"#),
+                decode(Money.self, #"{"amount":1,"currencyCode":"\#(code)"}"#),
+                decode(BigMoney.self, #"{"amount":"1.5","currencyCode":"\#(code)"}"#),
+            ] {
+                guard case .invalidFormat(code) = error else {
+                    Issue.record("Expected invalidFormat(\(code)), got \(String(describing: error))")
+                    continue
+                }
+            }
         }
     }
 

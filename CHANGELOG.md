@@ -5,6 +5,85 @@ All notable changes to MoneyKit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-10-21
+
+One signed `Money` type plus `BigMoney` for calculations, modelled on
+joda-money. See the migration table in `ARITHMETIC_GUIDE.md`.
+
+### Changed
+- **Breaking:** `Money` amounts are signed. Negative results from `-`, `*`,
+  and decoding are valid values instead of throwing. `Int.min` is still
+  rejected (`amountOverflow`) so negation and `abs()` never overflow.
+- **Breaking:** `Money(decimalAmount:currency:)` is now
+  `Money(decimalAmount:currency:rounding:)`; the old initializer rounded
+  `.halfUp` implicitly.
+- `allocate(by:)` and `distribute(into:)` split negative values by
+  magnitude and give every part the sign, so parts still sum exactly.
+
+### Added
+- `BigMoney`: a signed `Decimal` amount in standard units, never rounded
+  implicitly. `+` / `-` with `BigMoney` or `Money`, `*` / `/` by `Decimal`,
+  prefix `-`, `abs()`, sign queries, `Comparable`, `tryCompare(_:)`,
+  `sum(in:)`, and `rounded(_:)` back to `Money`. Codable encodes the amount
+  as a string to keep full precision.
+- `Money.zero(_:)`, `negated()`, prefix `-`, `abs()`, `isNegative`,
+  `isPositiveOrZero`, `isNegativeOrZero`.
+- `Money.multiplied(by:rounding:)` and `divided(by:rounding:)` taking
+  `Decimal`, and `toBigMoney()`.
+- `Double` and `Int` overloads of `Money(decimalAmount:currency:rounding:)`,
+  `multiplied(by:rounding:)`, `divided(by:rounding:)`,
+  `BigMoney(amount:currency:)`, and `BigMoney` `*` / `/`. A `Double` is
+  converted through its shortest text, like joda-money's
+  `BigDecimal.valueOf(double)`, so `0.07` is exactly 0.07 (`Decimal(0.07)`
+  is `0.07000000000000001024`). NaN, infinity, and out-of-range values throw
+  the new `MoneyError.invalidDecimal`.
+- `MoneyError.negativeRatio` and `MoneyError.negativePartCount`, thrown by
+  `allocate(by:)` for a negative ratio and `distribute(into:)` for a
+  negative part count.
+
+### Removed
+- **Breaking:** `SignedMoney`, `Money.minus(_:)`, `Money.signed`, and the
+  mixed `Money` / `SignedMoney` operators: plain `Money` covers them.
+- **Breaking:** `MoneyCalculation` and the `Double` / `Float` operators
+  that produced it: use `BigMoney`.
+- **Breaking:** `Money * Decimal` and `Money / Int`, which rounded
+  silently: use `multiplied(by:rounding:)` / `divided(by:rounding:)`.
+- **Breaking:** `multiply(by:rounding:)`, `divide(by:rounding:)`,
+  `percentage(_:)`, `withTax(rate:rounding:)`, `absolute`, and
+  `tryAdd` / `trySubtract` / `tryMultiply` / `tryDivide` (use `try?`).
+- **Breaking:** `MoneyError.negativeAmount`.
+- **Breaking:** `MoneyError.invalidCurrencyCode`, `CurrencyError.unknownCurrency`,
+  and `MoneyFormattingError`, which were never thrown. Invalid codes throw
+  `CurrencyError.invalidFormat`; codes outside ISO 4217 are allowed.
+
+### Fixed
+- `allocate(by:)` with a negative ratio threw `amountOverflow` ("share
+  exceeds Int.max") or `divisionByZero` depending on the other ratios; it
+  now throws `negativeRatio`. `distribute(into:)` with a negative count
+  threw `divisionByZero`; it now throws `negativePartCount`.
+- `allocate(by:)` trapped when the ratios summed beyond `Int.max`; it now
+  throws `amountOverflow`.
+- A NaN `Decimal` threw `amountOverflow` ("Amount NaN exceeds the range")
+  when rounded. `Money(decimalAmount:)`, `multiplied(by:rounding:)`,
+  `divided(by:rounding:)`, `BigMoney / Decimal`, and `BigMoney.rounded(_:)`
+  now throw `invalidDecimal(.nan)`, as `Double` NaN already did.
+  `BigMoney(amount:)` and `BigMoney * Decimal` still accept NaN, since they
+  don't throw; the value fails when rounded.
+- `Currency(code:)` accepted any three letters, including non-ASCII ones
+  (`"日本円"`, `"ÄÖÜ"`). Codes must now be ASCII letters, as documented;
+  others throw `CurrencyError.invalidFormat`.
+- `RoundingMode.towardZero` and `.awayFromZero` rounded negative values
+  as floor and ceiling. They now follow the magnitude.
+- `numericString` and `formatted` rounded to about 15 significant digits
+  at 16 or more decimal places (`NumberFormatter`): `Int.max` at 18 places
+  printed `9.223372036854780000`. `numericString` is now built from the
+  integer amount, and `formatted` uses `FormatStyle` on iOS 15 / macOS 12
+  and later, so both keep every digit.
+- `Money` Codable dropped a custom `decimalPlaces`: `Money(34590, USD at 4)`
+  (`$3.4590`) decoded as `$345.90`. Payloads now carry `decimalPlaces` when
+  it differs from the code's default; default-currency payloads are
+  unchanged, and payloads without the key decode at the default.
+
 ## [2.0.0] - 2026-10-21
 
 ### Changed

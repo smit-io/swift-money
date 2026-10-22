@@ -7,94 +7,54 @@ import Testing
 @Suite("Decimal Places Mismatch Tests")
 struct DecimalPlacesMismatchTests {
 
-    /// USD at its ISO 4217 default (2) and USD built with a custom 4.
-    let usd2 = Currency.USD
-    let usd4 = try! Currency(code: "USD", decimalPlaces: 4)
-
-    /// Whether `error` is `decimalPlacesMismatch` for USD, 2 vs 4 (in either order).
-    private func isUSDMismatch(_ error: MoneyError?) -> Bool {
+    /// Whether `error` is `decimalPlacesMismatch` for `fixture` vs its rescaled twin (in either order).
+    private func isMismatch(_ error: MoneyError?, _ fixture: CurrencyFixture) -> Bool {
         guard case .decimalPlacesMismatch(let code, let lhs, let rhs) = error else { return false }
-        return code == "USD" && Set([lhs, rhs]) == [2, 4]
+        return code == fixture.currency.code
+            && Set([lhs, rhs]) == [fixture.decimalPlaces, fixture.rescaled.decimalPlaces]
     }
 
-    // MARK: - Equality
+    @Test("The same amount at different decimal places is not equal", arguments: CurrencyFixture.all)
+    func notEqual(fixture: CurrencyFixture) throws {
+        let a = try fixture.money(34590)
+        let b = try Money(amount: 34590, currency: fixture.rescaled)
 
-    @Test("Money with the same amount at different decimal places is not equal")
-    func moneyNotEqual() throws {
-        let fourPlaces = try Money(amount: 34590, currency: usd4)  // $3.4590
-        let twoPlaces = try Money(amount: 34590, currency: usd2)   // $345.90
-
-        #expect(fourPlaces != twoPlaces)
-        #expect(fourPlaces.tryCompare(twoPlaces) == nil)
+        #expect(a != b)
+        #expect(a.tryCompare(b) == nil)
+        #expect(a.toBigMoney() != b.toBigMoney())
+        #expect(a.toBigMoney().tryCompare(b.toBigMoney()) == nil)
     }
 
-    @Test("Default currencies are unaffected")
-    func defaultsStillEqual() throws {
-        #expect(try Currency(code: "USD") == Currency.USD)
-        #expect(try Currency(code: "usd") == Currency.USD)
-        #expect(try Currency(code: "USD", decimalPlaces: 2) == Currency.USD)
+    @Test("Money arithmetic throws decimalPlacesMismatch", arguments: CurrencyFixture.all)
+    func moneyArithmetic(fixture: CurrencyFixture) throws {
+        let a = try fixture.money(34590)
+        let b = try Money(amount: 100, currency: fixture.rescaled)
 
-        let decoded = try JSONDecoder().decode(Money.self, from: JSONEncoder().encode(Money(amount: 1999, currency: .USD)))
-        #expect(decoded == (try Money(amount: 1999, currency: .USD)))
+        #expect(isMismatch(#expect(throws: MoneyError.self) { try a + b }, fixture))
+        #expect(isMismatch(#expect(throws: MoneyError.self) { try a - b }, fixture))
+        #expect(isMismatch(#expect(throws: MoneyError.self) { try b - a }, fixture))
+        #expect(isMismatch(#expect(throws: MoneyError.self) { try [a, b].sum(in: fixture.currency) }, fixture))
+        #expect(isMismatch(#expect(throws: MoneyError.self) { try [a].sum(in: fixture.rescaled) }, fixture))
     }
 
-    // MARK: - Throwing operations
+    @Test("BigMoney arithmetic throws decimalPlacesMismatch", arguments: CurrencyFixture.all)
+    func bigMoneyArithmetic(fixture: CurrencyFixture) throws {
+        let a = try fixture.money(1000).toBigMoney()
+        let b = try Money(amount: 1000, currency: fixture.rescaled)
 
-    @Test("Money addition and subtraction throw decimalPlacesMismatch")
-    func moneyArithmetic() throws {
-        let a = try Money(amount: 34590, currency: usd4)
-        let b = try Money(amount: 100, currency: usd2)
-
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try a + b }))
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try a - b }))
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try a.minus(b) }))
+        #expect(isMismatch(#expect(throws: MoneyError.self) { try a + b }, fixture))
+        #expect(isMismatch(#expect(throws: MoneyError.self) { try a - b }, fixture))
+        #expect(isMismatch(#expect(throws: MoneyError.self) { try a + b.toBigMoney() }, fixture))
+        #expect(isMismatch(#expect(throws: MoneyError.self) { try a - b.toBigMoney() }, fixture))
+        #expect(isMismatch(#expect(throws: MoneyError.self) { try [a, b.toBigMoney()].sum(in: fixture.currency) }, fixture))
     }
 
-    @Test("SignedMoney and mixed operators throw decimalPlacesMismatch")
-    func signedArithmetic() throws {
-        let signed = try SignedMoney(amount: -500, currency: usd4)
-        let money = try Money(amount: 100, currency: usd2)
+    @Test("Different codes still throw currencyMismatch", arguments: CurrencyFixture.all)
+    func differentCodes(fixture: CurrencyFixture) throws {
+        let a = try fixture.money(100)
+        let b = try Money(amount: 100, currency: fixture.otherCode)
 
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try signed + money.signed }))
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try signed - money.signed }))
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try signed + money }))
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try money - signed }))
-    }
-
-    @Test("Sums throw decimalPlacesMismatch on an element at other decimal places")
-    func sums() throws {
-        let mixed = [try Money(amount: 100, currency: usd2), try Money(amount: 100, currency: usd4)]
-
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try mixed.sum(in: .USD) }))
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try mixed.map(\.signed).sum(in: .USD) }))
-    }
-
-    @Test("MoneyCalculation addition and subtraction throw decimalPlacesMismatch")
-    func calculations() throws {
-        let a = try Money(amount: 1000, currency: usd2) * 1.5
-        let b = try Money(amount: 1000, currency: usd4) * 1.5
-
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try a + b }))
-        #expect(isUSDMismatch(#expect(throws: MoneyError.self) { try a - b }))
-    }
-
-    @Test("Safe arithmetic returns nil")
-    func safeArithmetic() throws {
-        let a = try Money(amount: 500, currency: usd4)
-        let b = try Money(amount: 100, currency: usd2)
-
-        #expect(a.tryAdd(b) == nil)
-        #expect(a.trySubtract(b) == nil)
-    }
-
-    // MARK: - Error choice and message
-
-    @Test("Different codes still throw currencyMismatch")
-    func differentCodes() throws {
-        let usd = try Money(amount: 100, currency: usd4)
-        let eur = try Money(amount: 100, currency: .EUR)
-
-        let error = #expect(throws: MoneyError.self) { try usd + eur }
+        let error = #expect(throws: MoneyError.self) { try a + b }
         guard case .currencyMismatch = error else {
             Issue.record("Expected currencyMismatch, got \(String(describing: error))")
             return

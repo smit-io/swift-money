@@ -2,238 +2,169 @@
 
 ## Overview
 
-MoneyKit provides type-safe arithmetic operations with precise rounding control. All operations involving floating-point multipliers return a `MoneyCalculation` object that allows you to choose the rounding mode.
+MoneyKit has two money types:
 
-## Basic Concepts
+- **`Money`**: a signed integer amount in the currency's smallest unit (cents,
+  yen, fils). Use it to store, transfer, and display amounts.
+- **`BigMoney`**: a signed `Decimal` amount in standard units (dollars,
+  yen, dinars) at any precision. Use it for calculations in progress.
 
-### Money Representation
-- Amounts are stored as integers in the smallest currency unit (cents, yen, fils, etc.)
-- Avoids floating-point precision issues
-- Compatible with payment processors
+Arithmetic that stays in whole minor units is exact. Anything that can
+produce a fraction of a minor unit names its rounding mode: either directly
+(`multiplied(by:rounding:)`, `divided(by:rounding:)`) or once at the end of a
+`BigMoney` chain (`rounded(_:)`). Nothing rounds implicitly.
 
-### Rounding Modes
+## Money
 
-| Mode | Description | Example (1357.4) |
-|------|-------------|-----------------|
-| `roundedUp` | Round up (ceiling) | 1358 |
-| `roundedDown` | Round down (floor) | 1357 |
-| `halfUp` | Round 0.5 up | 1357 |
-| `bankers` | Round to nearest even | 1357 |
-| `value` | Default (banker's) | 1357 |
+### Exact operations
 
-## Usage Examples
+```swift
+let price = try Money(amount: 1000, currency: .JPY)
+let coupon = try Money(amount: 1500, currency: .JPY)
 
-### Basic Multiplication
+try price + coupon        // ¥2500
+try price - coupon        // -¥500 (amounts are signed)
+try price * 3             // ¥3000
+-price                    // -¥1000 (same as price.negated())
+(-price).abs()            // ¥1000
+try [price, coupon].sum(in: .JPY)  // ¥2500
+```
+
+These throw `currencyMismatch` / `decimalPlacesMismatch` on mixed currencies
+and `amountOverflow` past `-Int.max...Int.max`.
+
+### Rounded operations
 
 ```swift
 let price = try Money(amount: 1234, currency: .JPY)
 
-// Get calculation object
-let calc = price * 1.1
-
-// Choose rounding mode
-let taxUp = try calc.roundedUp      // 1358 yen
-let taxDown = try calc.roundedDown  // 1357 yen
-let taxHalf = try calc.halfUp       // 1357 yen
-let taxBanker = try calc.bankers    // 1357 yen (default)
-let taxDefault = try calc.value     // 1357 yen (same as bankers)
+try price.multiplied(by: 1.1, rounding: .up)    // ¥1358 (1357.4)
+try price.multiplied(by: 1.1, rounding: .down)  // ¥1357
+try price.divided(by: 3, rounding: .halfUp)     // ¥411 (411.33…)
 ```
 
-### Division
+### Splitting without losing a unit
 
 ```swift
-let total = try Money(amount: 1000, currency: .JPY)
+let bill = try Money(amount: 15273, currency: .JPY)
 
-let calc = try total / 3.0
+try bill.distribute(into: 4)       // [3819, 3818, 3818, 3818], sums to 15273
+try bill.allocate(by: [70, 20, 10]) // proportional, sums to 15273
 
-let each = try calc.roundedDown  // 333 yen per person
-let eachUp = try calc.roundedUp  // 334 yen per person
+let refund = try Money(amount: -10000, currency: .USD)
+try refund.allocate(by: [1, 1, 1])  // [-3334, -3333, -3333]
 ```
 
-### Chained Operations
+## BigMoney
+
+Convert with `toBigMoney()`, chain, then round once:
 
 ```swift
-let originalPrice = try Money(amount: 10000, currency: .JPY)
+let price = try Money(amount: 10000, currency: .JPY)
 
-// 20% discount, then 10% tax
-let finalCalc = originalPrice * 0.8 * 1.1
+// 20% discount, then 10% tax, one rounding
+let final = try (price.toBigMoney() * 0.8 * 1.1).rounded(.down)  // ¥8800
 
-let final = try finalCalc.roundedDown  // 8800 yen
+// Mix in Money values without rounding
+let shipping = try Money(amount: 500, currency: .JPY)
+let gross = try price.toBigMoney() * 1.1 + shipping  // 11500, unrounded
 ```
 
-### Tax Calculations
+Rounding once can give a different answer from rounding every step:
 
 ```swift
-let subtotal = try Money(amount: 1000, currency: .JPY)
+let one = try Money(amount: 1, currency: .JPY)
 
-// Method 1: Using operators
-let withTax = try (subtotal * 1.1).roundedDown
-
-// Method 2: Using convenience method
-let withTax2 = try subtotal.withTax()  // Default: 10% tax, round down
-
-// Method 3: Custom tax rate and rounding
-let withTax3 = try subtotal.withTax(rate: 1.08, rounding: .up)
+try one.multiplied(by: 1.5, rounding: .down)
+       .multiplied(by: 1.5, rounding: .down)          // ¥1
+try (one.toBigMoney() * 1.5 * 1.5).rounded(.down)     // ¥2 (2.25)
 ```
 
-### Multiple Rounding Options
+`BigMoney` supports `+` / `-` with `BigMoney` or `Money`, `*` and `/` by
+`Decimal`, `Double`, or `Int`, prefix `-`, `abs()`, `isZero` / `isPositive` / `isNegative`,
+`Comparable`, `tryCompare(_:)`, and `sum(in:)`. Division throws on a zero
+divisor, and `Double` operands throw `invalidDecimal` for NaN or infinity;
+precision is `Decimal`'s 38 significant digits.
+
+A division that doesn't terminate is cut to 38 digits toward zero, so
+dividing and multiplying back lands just inside the original value. Rounding
+to nearest hides this; rounding toward zero does not:
 
 ```swift
-let price = try Money(amount: 1234, currency: .JPY)
-let calc = price * 1.08
+let third = try Money(amount: 1, currency: .JPY).toBigMoney() / 3 * 3  // 0.99999…
 
-// Compare different rounding modes
-print("Round Up:     \(try calc.roundedUp.formatted)")     // ¥1,333
-print("Round Down:   \(try calc.roundedDown.formatted)")   // ¥1,332
-print("Half Up:      \(try calc.halfUp.formatted)")        // ¥1,333
-print("Banker's:     \(try calc.bankers.formatted)")       // ¥1,333
+try third.rounded(.halfUp)      // ¥1 (also .bankers, .awayFromZero)
+try third.rounded(.towardZero)  // ¥0 (also .down here; .up for a negative value)
 ```
 
-## Advanced Usage
+joda-money avoids the residue by rounding every division to the amount's
+scale, which loses the precision earlier instead: USD 1.00 ÷ 3 is 0.33 or
+0.34 depending on the mode, so × 3 gives 0.99 or 1.02.
 
-### Combining Calculations
+## Rounding Modes
 
-```swift
-let item1 = try Money(amount: 1000, currency: .JPY)
-let item2 = try Money(amount: 500, currency: .JPY)
+| Mode | Description | 1357.4 → | 1357.5 → | -1357.5 → |
+|------|-------------|----------|----------|-----------|
+| `.up` | Toward positive infinity (ceiling) | 1358 | 1358 | -1357 |
+| `.down` | Toward negative infinity (floor) | 1357 | 1357 | -1358 |
+| `.halfUp` | Nearest, ties away from zero | 1357 | 1358 | -1358 |
+| `.bankers` | Nearest, ties to even | 1357 | 1358 | -1358 |
+| `.towardZero` | Truncate | 1357 | 1357 | -1357 |
+| `.awayFromZero` | Away from zero | 1358 | 1358 | -1358 |
 
-let calc1 = item1 * 1.1
-let calc2 = item2 * 1.1
+`.up` / `.down` follow the number line; `.towardZero` / `.awayFromZero`
+follow the magnitude. They differ only for negative values.
 
-// Add calculations before rounding
-let totalCalc = try calc1 + calc2
-let total = try totalCalc.roundedDown  // 1650 yen
-```
+## Currency-Specific Behavior
 
-### Currency-Specific Behavior
-
-```swift
-// JPY (0 decimal places)
-let yen = try Money(amount: 1000, currency: .JPY)
-let yenCalc = yen * 1.08
-let yenResult = try yenCalc.roundedDown  // 1080 yen
-
-// USD (2 decimal places)
-let usd = try Money(amount: 1999, currency: .USD)  // $19.99
-let usdCalc = usd * 1.08
-let usdResult = try usdCalc.roundedUp    // $21.59 (2159 cents)
-
-// KWD (3 decimal places)
-let kwd = try Money(amount: 1234, currency: .KWD)  // 1.234 KWD
-let kwdCalc = kwd * 1.1
-let kwdResult = try kwdCalc.roundedDown  // 1.357 KWD (1357 fils)
-```
-
-### Explicit Rounding Method
+Rounding always lands on the currency's decimal places:
 
 ```swift
-let price = try Money(amount: 1234, currency: .JPY)
+let usd = try Money(amount: 1999, currency: .USD)          // $19.99
+try usd.multiplied(by: 1.08, rounding: .up)                 // $21.59 (21.5892)
 
-// Using multiply with rounding parameter
-let result = try price.multiply(by: 1.1, rounding: .down)
-
-// Using divide with rounding parameter
-let divided = try price.divide(by: 3.0, rounding: .up)
+let kwd = try Money(amount: 1234, currency: .KWD)          // 1.234 KWD
+try kwd.multiplied(by: 1.1, rounding: .down)                // 1.357 KWD (1.3574)
 ```
 
 ## Real-World Examples
 
-### E-commerce Checkout
+### E-commerce checkout
 
 ```swift
-// Product pricing
-let productPrice = try Money(amount: 4999, currency: .USD)  // $49.99
-let shipping = try Money(amount: 500, currency: .USD)        // $5.00
-let subtotal = try productPrice + shipping                   // $54.99
-
-// Calculate tax (8%)
-let taxCalc = subtotal * 1.08
-let total = try taxCalc.roundedUp  // $59.39
-
-print("Subtotal: \(subtotal.formatted)")
-print("Total with tax: \(total.formatted)")
+let subtotal = try Money(amount: 4999, currency: .USD) + Money(amount: 500, currency: .USD)
+let total = try subtotal.multiplied(by: 1.08, rounding: .up)  // $59.39
 ```
 
-### Bill Splitting
+### Payment processing fee (2.9% + $0.30)
 
 ```swift
-let billTotal = try Money(amount: 15273, currency: .JPY)
-
-// Split among 4 people
-let perPersonCalc = try billTotal / 4.0
-
-let perPersonDown = try perPersonCalc.roundedDown  // 3818 yen
-let perPersonUp = try perPersonCalc.roundedUp      // 3819 yen
-
-// Use distribute for exact splitting (no money lost)
-let exactSplit = try billTotal.distribute(into: 4)
-// [3819, 3818, 3818, 3818] - sum equals exactly 15273
+let order = try Money(amount: 4999, currency: .USD)
+let fee = try order.multiplied(by: 0.029, rounding: .up) + Money(amount: 30, currency: .USD)
+let net = try order - fee  // $48.24
 ```
 
-### Payment API Integration
+### Tiered discounts with tax
 
 ```swift
-let orderAmount = try Money(amount: 4999, currency: .USD)  // $49.99
+let price = try Money(amount: 10000, currency: .JPY)
 
-// Calculate processing fee (2.9% + $0.30)
-let percentageFee = try (orderAmount * 0.029).roundedUp
-let fixedFee = try Money(amount: 30, currency: .USD)
-let totalFee = try percentageFee + fixedFee
-
-// Net amount after fees
-let netAmount = try orderAmount - totalFee
-
-// Send to Payment API
-let chargeParams = [
-    "amount": orderAmount.amount,
-    "currency": orderAmount.currency.code.lowercased()
-]
-```
-
-### Discount Scenarios
-
-```swift
-let originalPrice = try Money(amount: 10000, currency: .JPY)
-
-// Simple 20% off
-let discountCalc = originalPrice * 0.8
-let salePrice = try discountCalc.roundedDown  // 8000 yen
-
-// Tiered discount with tax
-let tier1 = originalPrice * 0.9        // 10% off
-let tier2 = originalPrice * 0.8        // 20% off
-let tier3 = originalPrice * 0.7        // 30% off
-
-let tier1WithTax = try (tier1 * 1.1).roundedDown
-let tier2WithTax = try (tier2 * 1.1).roundedDown
-let tier3WithTax = try (tier3 * 1.1).roundedDown
+for rate: Decimal in [0.9, 0.8, 0.7] {
+    let final = try (price.toBigMoney() * rate * 1.1).rounded(.down)  // ¥9900, ¥8800, ¥7700
+}
 ```
 
 ## Error Handling
 
-### Division by Zero
-
 ```swift
-let money = try Money(amount: 1000, currency: .JPY)
-
 do {
-    let calc = try money / 0.0
+    _ = try price.divided(by: 0, rounding: .down)
 } catch MoneyError.divisionByZero {
     print("Cannot divide by zero")
 }
-```
-
-### Currency Mismatch
-
-```swift
-let jpy = try Money(amount: 1000, currency: .JPY)
-let usd = try Money(amount: 1000, currency: .USD)
-
-let calc1 = jpy * 1.1
-let calc2 = usd * 1.1
 
 do {
-    let combined = try calc1 + calc2
+    _ = try Money(amount: 1000, currency: .JPY).toBigMoney() + Money(amount: 1000, currency: .USD)
 } catch MoneyError.currencyMismatch(let from, let to) {
     print("Cannot add \(from.code) and \(to.code)")
 }
@@ -243,85 +174,46 @@ The same code at different decimal places is a mismatch too, reported as
 `MoneyError.decimalPlacesMismatch(code:lhs:rhs:)` (a `Currency` built with a
 custom `decimalPlaces` is a different scale, and equality compares both).
 
-### Negative Amounts
+Use `try?` where a `nil` result is the right fallback:
 
 ```swift
-let calc = try Money(amount: 100, currency: .JPY) * -1.5
-
-do {
-    let result = try calc.roundedDown
-} catch MoneyError.negativeAmount(let amount) {
-    print("Negative amount not allowed: \(amount)")
-}
+let total = try? usd + eur  // nil on mismatch
 ```
 
 ## Best Practices
 
-1. **Always Choose Rounding Explicitly**
-   ```swift
-   // Good
-   let tax = try (price * 1.1).roundedDown
+1. **Round once.** Chain multi-step calculations in `BigMoney` and call
+   `rounded(_:)` at the end.
+2. **Document rounding choices.** Tax rules often mandate a mode, e.g.
+   Japanese consumption tax rounds down.
+3. **Pass rates as `Double` or `Int` literals, or `Decimal(string:)`.**
+   A `Double` argument is converted through its shortest text (joda-money's
+   `BigDecimal.valueOf(double)`), so `0.07` is exactly 0.07. A `Decimal`
+   *literal* is not: `let r: Decimal = 0.07` goes through `Double` and is
+   `0.07000000000000001024`, which can round `.up` one unit too far.
+4. **Split with `distribute` / `allocate`**, not division, when the parts must
+   add back up to the total.
+5. **Round to nearest after an inexact division.** `.towardZero` (and `.down`
+   / `.up` on the side toward zero) can land one unit short after dividing
+   by 3 or 7 and multiplying back.
 
-   // Avoid using .value without understanding it's banker's rounding
-   let tax = try (price * 1.1).value
-   ```
+## Migrating from 2.x
 
-2. **Use Tax-Specific Defaults**
-   ```swift
-   // In Japan, tax calculations typically round down
-   let taxed = try price.withTax()  // Uses .taxDefault (.down)
-   ```
-
-3. **Combine Operations Before Rounding**
-   ```swift
-   // Good - single rounding at the end
-   let final = try (price * 0.8 * 1.1).roundedDown
-
-   // Less precise - multiple roundings
-   let discount = try (price * 0.8).roundedDown
-   let final = try (discount * 1.1).roundedDown
-   ```
-
-4. **Handle Errors Gracefully**
-   ```swift
-   func calculateTax(_ amount: Money, rate: Double) -> Money? {
-       try? (amount * rate).roundedDown
-   }
-   ```
-
-5. **Document Rounding Decisions**
-   ```swift
-   // Always document why you chose a specific rounding mode
-   // Japan's consumption tax law requires rounding down
-   let taxAmount = try (subtotal * 1.1).roundedDown
-   ```
-
-## Supported Types
-
-- `Double`: Most common, sufficient precision for monetary calculations
-- `Float`: Supported but Double is recommended
-- `Int`: Exact multiplication (no rounding needed)
-- `Decimal`: Supported through `Money * Decimal` in existing operations
-
-## Performance Notes
-
-- `MoneyCalculation` is lightweight and efficient
-- Rounding is performed only when calling `.roundedUp`, `.roundedDown`, etc.
-- Multiple rounding modes can be obtained from the same calculation without re-computing
-- No memory allocations for intermediate calculations
-
-## Migration from Older APIs
-
-If you were using:
-```swift
-// Old
-let result = try money * 1.1  // Error: requires explicit rounding
-```
-
-Update to:
-```swift
-// New
-let result = try (money * 1.1).roundedDown
-// or
-let result = try money.multiply(by: 1.1, rounding: .down)
-```
+| 2.x | 3.0 |
+|-----|-----|
+| `SignedMoney` | `Money` (amounts are signed) |
+| `a.minus(b)` | `a - b` |
+| `money.signed` | `money` |
+| `signed.money` | `signed.isNegative ? nil : signed` |
+| `signed.magnitude` / `money.absolute` | `abs()` |
+| `MoneyError.negativeAmount` | removed: negative amounts are valid |
+| `Money(decimalAmount:currency:)` | `Money(decimalAmount:currency:rounding:)` (2.x rounded `.halfUp`) |
+| `money * Decimal(1.5)` | `money.multiplied(by: 1.5, rounding: .halfUp)` |
+| `money.percentage(0.15)` | `money.multiplied(by: 0.15, rounding: .halfUp)` |
+| `money / 4` | `money.divided(by: 4, rounding: .towardZero)` |
+| `money * 1.1` → `MoneyCalculation` | `money.toBigMoney() * 1.1` → `BigMoney` |
+| `calc.roundedUp` / `.roundedDown` / `.halfUp` / `.bankers` / `.value` | `big.rounded(.up)` / `(.down)` / `(.halfUp)` / `(.bankers)` / `(.bankers)` |
+| `money.multiply(by:rounding:)` | `money.multiplied(by:rounding:)` |
+| `money.divide(by:rounding:)` | `money.divided(by:rounding:)` |
+| `money.withTax(rate: 1.1)` | `money.multiplied(by: 1.1, rounding: .down)` |
+| `tryAdd` / `trySubtract` / `tryMultiply` / `tryDivide` | `try?` with `+` / `-` / `*` / `divided(by:rounding:)` |

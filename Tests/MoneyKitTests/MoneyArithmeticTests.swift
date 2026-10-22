@@ -5,458 +5,376 @@ import Foundation
 @Suite("Money Arithmetic Tests")
 struct MoneyArithmeticTests {
 
-    @Test("Addition with same currency")
-    func addition() throws {
-        let m1 = try Money(amount: 1000, currency: .USD)
-        let m2 = try Money(amount: 500, currency: .USD)
+    // MARK: - Exact arithmetic
 
-        let result = try m1 + m2
-        #expect(result.amount == 1500)
-        #expect(result.currency == .USD)
-    }
-
-    @Test("Addition with different currencies throws error")
-    func additionDifferentCurrencies() throws {
-        let usd = try Money(amount: 1000, currency: .USD)
-        let eur = try Money(amount: 500, currency: .EUR)
-
-        #expect(throws: MoneyError.self) {
-            _ = try usd + eur
+    @Test("Addition across sign combinations", arguments: CurrencyFixture.all)
+    func addition(fixture: CurrencyFixture) throws {
+        for (lhs, rhs, expected) in [(500, 300, 800), (500, -300, 200), (-500, 300, -200), (-500, -300, -800), (500, -500, 0)] {
+            let sum = try fixture.money(lhs) + fixture.money(rhs)
+            #expect(sum.amount == expected)
+            #expect(sum.currency == fixture.currency)
         }
     }
 
-    @Test("Subtraction with same currency")
-    func subtraction() throws {
-        let m1 = try Money(amount: 1000, currency: .USD)
-        let m2 = try Money(amount: 300, currency: .USD)
+    @Test("Subtraction can go negative", arguments: CurrencyFixture.all)
+    func subtraction(fixture: CurrencyFixture) throws {
+        let a = try fixture.money(100)
+        let b = try fixture.money(500)
 
-        let result = try m1 - m2
-        #expect(result.amount == 700)
-        #expect(result.currency == .USD)
+        #expect(try (b - a).amount == 400)
+        #expect(try (a - b).amount == -400)
+        #expect(try (a - a).isZero)
+        #expect(try (a - b).currency == fixture.currency)
     }
 
-    @Test("Subtraction resulting in negative throws error")
-    func subtractionNegativeResult() throws {
-        let m1 = try Money(amount: 100, currency: .USD)
-        let m2 = try Money(amount: 500, currency: .USD)
+    @Test("Multiplication by an integer, including negative and zero", arguments: CurrencyFixture.all)
+    func multiplication(fixture: CurrencyFixture) throws {
+        let money = try fixture.money(250)
 
-        #expect(throws: MoneyError.self) {
-            _ = try m1 - m2
+        #expect(try (money * 5).amount == 1250)
+        #expect(try (money * -3).amount == -750)
+        #expect(try (-money * -2).amount == 500)
+        #expect(try (fixture.money(Int.max) * 0).isZero)
+    }
+
+    @Test("Negation and abs; zero stays zero", arguments: CurrencyFixture.all)
+    func negationAndAbs(fixture: CurrencyFixture) throws {
+        let money = try fixture.money(500)
+
+        #expect((-money).amount == -500)
+        #expect(money.negated() == -money)
+        #expect(-(-money) == money)
+        #expect((-money).abs() == money)
+        #expect(money.abs() == money)
+        #expect(-Money.zero(fixture.currency) == Money.zero(fixture.currency))
+        #expect((-(try fixture.money(Int.max))).amount == -Int.max)
+    }
+
+    @Test("Mixing in another code throws currencyMismatch", arguments: CurrencyFixture.all)
+    func currencyMismatch(fixture: CurrencyFixture) throws {
+        let a = try fixture.money(100)
+        let b = try Money(amount: 100, currency: fixture.otherCode)
+
+        for error in [
+            #expect(throws: MoneyError.self) { try a + b },
+            #expect(throws: MoneyError.self) { try a - b },
+            #expect(throws: MoneyError.self) { try [a, b].sum(in: fixture.currency) },
+        ] {
+            guard case .currencyMismatch = error else {
+                Issue.record("Expected currencyMismatch, got \(String(describing: error))")
+                continue
+            }
         }
     }
 
-    @Test("Subtraction with different currencies throws error")
-    func subtractionDifferentCurrencies() throws {
-        let usd = try Money(amount: 1000, currency: .USD)
-        let eur = try Money(amount: 500, currency: .EUR)
+    // MARK: - Overflow
 
-        #expect(throws: MoneyError.self) {
-            _ = try usd - eur
+    @Test("Overflow throws instead of trapping", arguments: CurrencyFixture.all)
+    func overflow(fixture: CurrencyFixture) throws {
+        let max = try fixture.money(Int.max)
+        let min = try fixture.money(-Int.max)
+        let one = try fixture.money(1)
+
+        #expect(throws: MoneyError.self) { try max + one }
+        #expect(throws: MoneyError.self) { try min - one }       // lands on Int.min
+        #expect(throws: MoneyError.self) { try min - max }       // overflows Int
+        #expect(throws: MoneyError.self) { try max - min }
+        #expect(throws: MoneyError.self) { try max * 2 }
+        #expect(throws: MoneyError.self) { try fixture.money(Int.min / 2) * 2 }  // lands on Int.min
+        #expect(throws: MoneyError.self) { try [max, one].sum(in: fixture.currency) }
+    }
+
+    @Test("Arithmetic near the limits succeeds", arguments: CurrencyFixture.all)
+    func nearLimits(fixture: CurrencyFixture) throws {
+        let nearMax = try fixture.money(Int.max - 100)
+
+        #expect(try (nearMax + fixture.money(50)).amount == Int.max - 50)
+        #expect(try (fixture.money(-Int.max) + fixture.money(Int.max)).isZero)
+        #expect(try (fixture.money(1000) * (Int.max / 1000)).amount == Int.max / 1000 * 1000)
+    }
+
+    // MARK: - Rounded arithmetic
+
+    /// 1234 × 1.1 = 1357.4 and -1234 × 1.1 = -1357.4, in minor units.
+    static let multiplicationTable: [RoundingMode: (positive: Int, negative: Int)] = [
+        .up: (1358, -1357),
+        .down: (1357, -1358),
+        .halfUp: (1357, -1357),
+        .bankers: (1357, -1357),
+        .towardZero: (1357, -1357),
+        .awayFromZero: (1358, -1358),
+    ]
+
+    @Test("multiplied(by:) rounds with the given mode", arguments: CurrencyFixture.all, CurrencyFixture.roundingModes)
+    func multiplied(fixture: CurrencyFixture, mode: RoundingMode) throws {
+        let money = try fixture.money(1234)
+        let rate = Decimal(string: "1.1")!
+        let expected = try #require(Self.multiplicationTable[mode])
+
+        #expect(try money.multiplied(by: rate, rounding: mode).amount == expected.positive)
+        #expect(try (-money).multiplied(by: rate, rounding: mode).amount == expected.negative)
+        #expect(try money.multiplied(by: -rate, rounding: mode).amount == expected.negative)
+    }
+
+    /// 1234 ÷ 3 = 411.33… and -1234 ÷ 3 = -411.33…, in minor units.
+    static let divisionTable: [RoundingMode: (positive: Int, negative: Int)] = [
+        .up: (412, -411),
+        .down: (411, -412),
+        .halfUp: (411, -411),
+        .bankers: (411, -411),
+        .towardZero: (411, -411),
+        .awayFromZero: (412, -412),
+    ]
+
+    @Test("divided(by:) rounds with the given mode", arguments: CurrencyFixture.all, CurrencyFixture.roundingModes)
+    func divided(fixture: CurrencyFixture, mode: RoundingMode) throws {
+        let money = try fixture.money(1234)
+        let expected = try #require(Self.divisionTable[mode])
+
+        #expect(try money.divided(by: Decimal(3), rounding: mode).amount == expected.positive)
+        #expect(try (-money).divided(by: Decimal(3), rounding: mode).amount == expected.negative)
+        #expect(try money.divided(by: Decimal(4), rounding: mode).amount == Self.tieTable[mode])
+    }
+
+    /// 1234 ÷ 4 = 308.5, a tie: 308 is the even neighbor.
+    static let tieTable: [RoundingMode: Int] = [
+        .up: 309, .down: 308, .halfUp: 309, .bankers: 308, .towardZero: 308, .awayFromZero: 309,
+    ]
+
+    @Test("Rounded arithmetic errors", arguments: CurrencyFixture.all)
+    func roundedErrors(fixture: CurrencyFixture) throws {
+        let money = try fixture.money(100)
+        let large = try fixture.money(Int.max / 2)
+
+        #expect(throws: MoneyError.self) { try money.divided(by: Decimal(0), rounding: .down) }
+        #expect(throws: MoneyError.self) { try large.multiplied(by: Decimal(3), rounding: .down) }
+        #expect(throws: MoneyError.self) { try large.multiplied(by: Decimal(-3), rounding: .down) }
+        #expect(throws: MoneyError.self) { try large.divided(by: Decimal(string: "0.1")!, rounding: .down) }
+    }
+
+    @Test("Percentages in minor units", arguments: CurrencyFixture.all)
+    func percentages(fixture: CurrencyFixture) throws {
+        // Subtotal 5499, 8.5% tax = 467.415 → 467; total 5966.
+        let subtotal = try fixture.money(5499)
+        let tax = try subtotal.multiplied(by: Decimal(string: "0.085")!, rounding: .halfUp)
+
+        #expect(tax.amount == 467)
+        #expect(try (subtotal + tax).amount == 5966)
+
+        // 2.9% fee on 4999 = 144.971 → 145, plus a fixed 30.
+        let fee = try fixture.money(4999).multiplied(by: Decimal(string: "0.029")!, rounding: .halfUp) + fixture.money(30)
+        #expect(try (fixture.money(4999) - fee).amount == 4824)
+    }
+
+    // MARK: - Distribution
+
+    @Test("distribute splits evenly with the remainder first, for either sign", arguments: CurrencyFixture.all)
+    func distribute(fixture: CurrencyFixture) throws {
+        #expect(try fixture.money(100).distribute(into: 3).map(\.amount) == [34, 33, 33])
+        #expect(try fixture.money(-100).distribute(into: 3).map(\.amount) == [-34, -33, -33])
+        #expect(try fixture.money(15000).distribute(into: 4).map(\.amount) == [3750, 3750, 3750, 3750])
+        #expect(try fixture.money(0).distribute(into: 2).map(\.amount) == [0, 0])
+
+        for amount in [10850, -10850, Int.max - 1000, -(Int.max - 1000)] {
+            let total = try fixture.money(amount)
+            let parts = try total.distribute(into: 7)
+            #expect(try parts.sum(in: fixture.currency) == total)
+            #expect(parts.allSatisfy { $0.currency == fixture.currency })
         }
     }
 
-    @Test("Multiplication by integer")
-    func multiplicationByInteger() throws {
-        let money = try Money(amount: 100, currency: .USD)
-        let result = try money * 5
+    @Test("distribute rejects zero or negative part counts", arguments: CurrencyFixture.all)
+    func distributeInvalid(fixture: CurrencyFixture) throws {
+        let money = try fixture.money(100)
 
-        #expect(result.amount == 500)
-        #expect(result.currency == .USD)
-    }
-
-    @Test("Multiplication by decimal")
-    func multiplicationByDecimal() throws {
-        let money = try Money(amount: 100, currency: .USD)
-        let result = try money * Decimal(1.5)
-
-        #expect(result.amount == 150)
-        #expect(result.currency == .USD)
-    }
-
-    @Test("Multiplication by negative throws error")
-    func multiplicationByNegative() throws {
-        let money = try Money(amount: 100, currency: .USD)
-
-        #expect(throws: MoneyError.self) {
-            _ = try money * -2
+        let zero = #expect(throws: MoneyError.self) { try money.distribute(into: 0) }
+        if case .divisionByZero = zero {} else {
+            Issue.record("Expected divisionByZero, got \(String(describing: zero))")
+        }
+        for parts in [-1, -3, Int.min] {
+            let error = #expect(throws: MoneyError.self) { try money.distribute(into: parts) }
+            guard case .negativePartCount(parts) = error else {
+                Issue.record("Expected negativePartCount(\(parts)), got \(String(describing: error))")
+                continue
+            }
         }
     }
 
-    @Test("Division by integer")
-    func divisionByInteger() throws {
-        let money = try Money(amount: 100, currency: .USD)
-        let result = try money / 4
+    // MARK: - Allocation
 
-        #expect(result.amount == 25)
-        #expect(result.currency == .USD)
+    @Test("allocate splits by ratio", arguments: CurrencyFixture.all)
+    func allocate(fixture: CurrencyFixture) throws {
+        #expect(try fixture.money(100).allocate(by: [1, 1, 1]).map(\.amount) == [34, 33, 33])
+        #expect(try fixture.money(100).allocate(by: [70, 30]).map(\.amount) == [70, 30])
+        #expect(try fixture.money(100_000).allocate(by: [70, 20, 10]).map(\.amount) == [70_000, 20_000, 10_000])
+        #expect(try fixture.money(-10000).allocate(by: [1, 1, 1]).map(\.amount) == [-3334, -3333, -3333])
     }
 
-    @Test("Division by zero throws error")
-    func divisionByZero() throws {
-        let money = try Money(amount: 100, currency: .USD)
-
-        #expect(throws: MoneyError.self) {
-            _ = try money / 0
+    @Test("allocate never gives a remainder unit to a zero ratio", arguments: CurrencyFixture.all)
+    func allocateZeroRatios(fixture: CurrencyFixture) throws {
+        for (amount, ratios, expected) in [
+            (5, [0, 1, 1], [0, 3, 2]),
+            (-5, [0, 1, 1], [0, -3, -2]),
+            (100, [1, 0, 1, 0, 1], [34, 0, 33, 0, 33]),
+            (100, [0, 0, 1], [0, 0, 100]),
+            (100, [0, 2, 0, 1], [0, 67, 0, 33]),
+        ] {
+            #expect(try fixture.money(amount).allocate(by: ratios).map(\.amount) == expected)
         }
     }
 
-    @Test("Distribution into equal parts")
-    func distribution() throws {
-        let money = try Money(amount: 100, currency: .USD)
-        let parts = try money.distribute(into: 3)
+    @Test("allocate sums exactly and keeps the currency", arguments: CurrencyFixture.all)
+    func allocateSums(fixture: CurrencyFixture) throws {
+        for (amount, ratios) in [
+            (-10001, [70, 30]),
+            (-1001, [1, 2, 3]),
+            (-1000, [3, 0, 4]),
+            (9999, [1, 1, 1, 1]),
+            (120_000, [16, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31, 15]),
+            (Int.max - 1000, [1, 1, 1]),
+            (-(Int.max - 1000), [1, 1, 1]),
+        ] {
+            let total = try fixture.money(amount)
+            let parts = try total.allocate(by: ratios)
 
-        #expect(parts.count == 3)
-        #expect(parts[0].amount == 34)  // Gets extra from remainder
-        #expect(parts[1].amount == 33)
-        #expect(parts[2].amount == 33)
+            #expect(parts.count == ratios.count)
+            #expect(parts.allSatisfy { $0.currency == fixture.currency })
+            #expect(try parts.sum(in: fixture.currency) == total)
+        }
 
-        // Sum should equal original
-        let sum = parts.reduce(0) { $0 + $1.amount }
-        #expect(sum == 100)
+        // Splitting a part again still sums to the original.
+        let total = try fixture.money(-10000)
+        let first = try total.allocate(by: [1, 2])
+        let nested = try first[1].allocate(by: [1, 1, 1])
+        #expect(try (nested + [first[0]]).sum(in: fixture.currency) == total)
     }
 
-    @Test("Distribution with zero parts throws error")
-    func distributionZeroParts() throws {
-        let money = try Money(amount: 100, currency: .USD)
-
-        #expect(throws: MoneyError.self) {
-            _ = try money.distribute(into: 0)
+    @Test("allocate rejects empty or all-zero ratios", arguments: CurrencyFixture.all)
+    func allocateInvalid(fixture: CurrencyFixture) throws {
+        for amount in [100, -100, 0] {
+            let money = try fixture.money(amount)
+            for ratios in [[], [0], [0, 0]] {
+                let error = #expect(throws: MoneyError.self) { try money.allocate(by: ratios) }
+                guard case .divisionByZero = error else {
+                    Issue.record("Expected divisionByZero for \(ratios), got \(String(describing: error))")
+                    continue
+                }
+            }
         }
     }
 
-    @Test("Allocation by ratios")
-    func allocation() throws {
-        let money = try Money(amount: 100, currency: .USD)
-        let parts = try money.allocate(by: [1, 1, 1])
-
-        #expect(parts.count == 3)
-
-        // Sum should equal original
-        let sum = parts.reduce(0) { $0 + $1.amount }
-        #expect(sum == 100)
-    }
-
-    @Test("Allocation by weighted ratios")
-    func allocationWeighted() throws {
-        let money = try Money(amount: 100, currency: .USD)
-        let parts = try money.allocate(by: [70, 30])
-
-        #expect(parts.count == 2)
-        #expect(parts[0].amount == 70)
-        #expect(parts[1].amount == 30)
-
-        // Sum should equal original
-        let sum = parts.reduce(0) { $0 + $1.amount }
-        #expect(sum == 100)
-    }
-
-    @Test("Allocation never gives a remainder unit to a zero ratio")
-    func allocationZeroRatioGetsNothing() throws {
-        let money = try Money(amount: 5, currency: .USD)
-        let parts = try money.allocate(by: [0, 1, 1])
-
-        #expect(parts.map(\.amount) == [0, 3, 2])
-    }
-
-    @Test("Allocation skips zero ratios anywhere in the list", arguments: [
-        ([1, 0, 1, 0, 1], [34, 0, 33, 0, 33]),
-        ([0, 0, 1], [0, 0, 100]),
-        ([0, 2, 0, 1], [0, 67, 0, 33]),
-    ])
-    func allocationZeroRatioPositions(ratios: [Int], expected: [Int]) throws {
-        let money = try Money(amount: 100, currency: .USD)
-        let parts = try money.allocate(by: ratios)
-
-        #expect(parts.map(\.amount) == expected)
-        #expect(parts.reduce(0) { $0 + $1.amount } == 100)
-    }
-
-    @Test("Zero-ratio allocation is the same for currencies without two decimal places", arguments: [
-        ("JPY", 0),
-        ("KRW", 0),
-        ("KWD", 3),
-        ("BHD", 3),
-        ("CLF", 4),
-    ])
-    func allocationZeroRatioOtherDecimalPlaces(code: String, decimalPlaces: Int) throws {
-        let currency = try Currency(code: code)
-        #expect(currency.decimalPlaces == decimalPlaces)
-
-        let money = try Money(amount: 5, currency: currency)
-        let parts = try money.allocate(by: [0, 1, 1])
-
-        #expect(parts.map(\.amount) == [0, 3, 2])
-        #expect(parts.allSatisfy { $0.currency == currency })
-    }
-
-    @Test("Allocation with empty ratios throws error")
-    func allocationEmptyRatios() throws {
-        let money = try Money(amount: 100, currency: .USD)
-
-        #expect(throws: MoneyError.self) {
-            _ = try money.allocate(by: [])
+    @Test("allocate rejects negative ratios, reporting the first", arguments: CurrencyFixture.all)
+    func allocateNegativeRatios(fixture: CurrencyFixture) throws {
+        for amount in [100, -100, 0] {
+            let money = try fixture.money(amount)
+            // Positive totals, negative totals, all zeros besides, and
+            // a negative ratio that would otherwise overflow the sum.
+            for (ratios, first) in [
+                ([-1], -1),
+                ([2, -1], -1),
+                ([-1, 2], -1),
+                ([1, -2, -3], -2),
+                ([-1, -1], -1),
+                ([0, -1, 0], -1),
+                ([Int.max, Int.min], Int.min),
+            ] {
+                let error = #expect(throws: MoneyError.self) { try money.allocate(by: ratios) }
+                guard case .negativeRatio(first) = error else {
+                    Issue.record("Expected negativeRatio(\(first)) for \(ratios), got \(String(describing: error))")
+                    continue
+                }
+            }
         }
     }
 
-    @Test("Percentage calculation")
-    func percentage() throws {
-        let money = try Money(amount: 10000, currency: .USD)  // $100.00
-        let tax = try money.percentage(0.15)  // 15%
+    @Test("allocate throws when the ratios sum beyond Int.max", arguments: CurrencyFixture.all)
+    func allocateRatioOverflow(fixture: CurrencyFixture) throws {
+        let money = try fixture.money(100)
 
-        #expect(tax.amount == 1500)  // $15.00
-        #expect(tax.currency == .USD)
-    }
-
-    @Test("Safe addition - try add")
-    func tryAdd() throws {
-        let m1 = try Money(amount: 100, currency: .USD)
-        let m2 = try Money(amount: 50, currency: .USD)
-        let m3 = try Money(amount: 50, currency: .EUR)
-
-        let result = m1.tryAdd(m2)
-        #expect(result?.amount == 150)
-
-        let mismatch = m1.tryAdd(m3)
-        #expect(mismatch == nil)
-    }
-
-    @Test("Safe subtraction - try subtract")
-    func trySubtract() throws {
-        let m1 = try Money(amount: 100, currency: .USD)
-        let m2 = try Money(amount: 50, currency: .USD)
-        let m3 = try Money(amount: 150, currency: .USD)
-        let m4 = try Money(amount: 50, currency: .EUR)
-
-        let result = m1.trySubtract(m2)
-        #expect(result?.amount == 50)
-
-        let negative = m1.trySubtract(m3)
-        #expect(negative == nil)
-
-        let mismatch = m1.trySubtract(m4)
-        #expect(mismatch == nil)
-    }
-
-    @Test("Safe multiplication - try multiply")
-    func tryMultiply() throws {
-        let money = try Money(amount: 100, currency: .USD)
-
-        let result = money.tryMultiply(by: 5)
-        #expect(result?.amount == 500)
-
-        let negative = money.tryMultiply(by: -2)
-        #expect(negative == nil)
-    }
-
-    @Test("Safe division - try divide")
-    func tryDivide() throws {
-        let money = try Money(amount: 100, currency: .USD)
-
-        let result = money.tryDivide(by: 4)
-        #expect(result?.amount == 25)
-
-        let zero = money.tryDivide(by: 0)
-        #expect(zero == nil)
-    }
-
-    @Test("Zero checks")
-    func zeroChecks() throws {
-        let zero = try Money(amount: 0, currency: .USD)
-        let positive = try Money(amount: 100, currency: .USD)
-
-        #expect(zero.isZero)
-        #expect(!zero.isPositive)
-
-        #expect(!positive.isZero)
-        #expect(positive.isPositive)
-    }
-
-    @Test("Absolute value")
-    func absoluteValue() throws {
-        // Money is always non-negative, so absolute should return self
-        let money = try Money(amount: 100, currency: .USD)
-        #expect(money.absolute == money)
-    }
-
-    @Test("Complex calculation example")
-    func complexCalculation() throws {
-        // Simulate: $100 item + 8.5% tax
-        let price = try Money(amount: 10000, currency: .USD)
-        let taxRate = Decimal(0.085)
-        let tax = try price.percentage(taxRate)
-        let total = try price + tax
-
-        #expect(total.amount == 10850)  // $108.50
-
-        // Split bill 3 ways
-        let split = try total.distribute(into: 3)
-        let sum = split.reduce(0) { $0 + $1.amount }
-        #expect(sum == 10850)
-    }
-
-    @Test("Payment API scenario")
-    func paymentApiScenario() throws {
-        // Product: $49.99
-        let productPrice = try Money(amount: 4999, currency: .USD)
-
-        // Shipping: $5.00
-        let shipping = try Money(amount: 500, currency: .USD)
-
-        // Subtotal
-        let subtotal = try productPrice + shipping
-
-        // Tax: 7.5%
-        let tax = try subtotal.percentage(0.075)
-
-        // Total
-        let total = try subtotal + tax
-
-        #expect(total.amount == 5911)  // $59.11
-
-        // Convert to decimal for API
-        #expect(total.decimalAmount == 59.11)
-    }
-
-    // MARK: - Overflow Tests
-
-    @Test("Addition overflow detection")
-    func additionOverflow() throws {
-        let large = try Money(amount: Int.max - 100, currency: .JPY)
-        let small = try Money(amount: 200, currency: .JPY)
-
-        #expect(throws: MoneyError.self) {
-            _ = try large + small
+        for ratios in [[Int.max, 1], [Int.max / 2 + 1, Int.max / 2 + 1], [1, Int.max]] {
+            let error = #expect(throws: MoneyError.self) { try money.allocate(by: ratios) }
+            guard case .amountOverflow = error else {
+                Issue.record("Expected amountOverflow for \(ratios), got \(String(describing: error))")
+                continue
+            }
         }
     }
 
-    @Test("Addition near Int.max succeeds")
-    func additionNearIntMax() throws {
-        let large = try Money(amount: Int.max - 100, currency: .JPY)
-        let small = try Money(amount: 50, currency: .JPY)
-
-        let result = try large + small
-        #expect(result.amount == Int.max - 50)
-    }
-
-    @Test("Multiplication overflow detection")
-    func multiplicationOverflow() throws {
-        let large = try Money(amount: Int.max / 2 + 1, currency: .JPY)
-
-        #expect(throws: MoneyError.self) {
-            _ = try large * 3
+    @Test("allocationShare rounds magnitude × ratio / total down")
+    func allocationShare() throws {
+        for (magnitude, ratio, total, expected) in [
+            (100, 1, 3, 33),
+            (100, 2, 3, 66),
+            (100, 0, 3, 0),
+            (100, 3, 3, 100),
+            (0, 1, 1, 0),
+            (Int.max, 1, 1, Int.max),
+            (Int.max, Int.max - 1, Int.max, Int.max - 1),
+            (Int.max, 1, Int.max, 1),
+            (Int.max, 1, 2, Int.max / 2),
+        ] {
+            #expect(try Money.allocationShare(of: magnitude, ratio: ratio, total: total) == expected, "\(magnitude) × \(ratio) / \(total)")
         }
     }
 
-    @Test("Multiplication near Int.max succeeds")
-    func multiplicationNearIntMax() throws {
-        let money = try Money(amount: 1000, currency: .JPY)
-        let result = try money * (Int.max / 1000)
-
-        // Should succeed without overflow
-        #expect(result.amount > 0)
-    }
-
-    @Test("Multiplication by zero is safe")
-    func multiplicationByZero() throws {
-        let money = try Money(amount: Int.max, currency: .JPY)
-        let result = try money * 0
-
-        #expect(result.amount == 0)
-    }
-
-    @Test("Addition of zero is safe")
-    func additionOfZero() throws {
-        let large = try Money(amount: Int.max, currency: .JPY)
-        let zero = try Money(amount: 0, currency: .JPY)
-
-        let result = try large + zero
-        #expect(result.amount == Int.max)
-    }
-
-    @Test("Large allocation maintains sum")
-    func largeAllocation() throws {
-        let large = try Money(amount: Int.max - 1000, currency: .JPY)
-        let parts = try large.allocate(by: [1, 1, 1])
-
-        let sum = parts.reduce(0) { $0 + $1.amount }
-        #expect(sum == Int.max - 1000)
-    }
-
-    @Test("Large distribution maintains sum")
-    func largeDistribution() throws {
-        let large = try Money(amount: Int.max - 1000, currency: .JPY)
-        let parts = try large.distribute(into: 7)
-
-        let sum = parts.reduce(0) { $0 + $1.amount }
-        #expect(sum == Int.max - 1000)
-    }
-
-    // MARK: - Safe Arithmetic Overflow Tests
-
-    @Test("tryAdd returns nil on overflow")
-    func tryAddOverflow() throws {
-        let large = try Money(amount: Int.max - 100, currency: .JPY)
-        let small = try Money(amount: 200, currency: .JPY)
-
-        let result = large.tryAdd(small)
-        #expect(result == nil)  // Should return nil, not crash
-    }
-
-    @Test("tryAdd succeeds near Int.max")
-    func tryAddNearMax() throws {
-        let large = try Money(amount: Int.max - 100, currency: .JPY)
-        let small = try Money(amount: 50, currency: .JPY)
-
-        let result = large.tryAdd(small)
-        #expect(result?.amount == Int.max - 50)
-    }
-
-    @Test("tryMultiply returns nil on overflow")
-    func tryMultiplyOverflow() throws {
-        let large = try Money(amount: Int.max / 2 + 1, currency: .JPY)
-
-        let result = large.tryMultiply(by: 3)
-        #expect(result == nil)  // Should return nil, not crash
-    }
-
-    @Test("tryMultiply succeeds with valid multiplication")
-    func tryMultiplyValid() throws {
-        let money = try Money(amount: 1000, currency: .JPY)
-
-        let result = money.tryMultiply(by: 100)
-        #expect(result?.amount == 100000)
-    }
-
-    @Test("tryDivide returns nil on division by zero")
-    func tryDivideByZero() throws {
-        let money = try Money(amount: 1000, currency: .JPY)
-
-        let result = money.tryDivide(by: 0)
-        #expect(result == nil)
-    }
-
-    @Test("tryDivide succeeds with valid division")
-    func tryDivideValid() throws {
-        let money = try Money(amount: 1000, currency: .JPY)
-
-        let result = money.tryDivide(by: 3)
-        #expect(result?.amount == 333)
-    }
-
-    @Test("Money * Decimal throws overflow error")
-    func decimalMultiplicationOverflow() throws {
-        let large = try Money(amount: Int.max / 2, currency: .JPY)
-
-        #expect(throws: MoneyError.self) {
-            _ = try large * Decimal(3.0)
+    @Test("allocationShare throws instead of saturating outside 0...Int.max")
+    func allocationShareOutOfRange() {
+        // allocate(by:) never passes these (it rejects negative ratios and
+        // ratio <= total always holds); the guard protects the Int conversion.
+        for (magnitude, ratio, total) in [
+            (Int.max, 2, 1),      // 2 × Int.max
+            (Int.max / 2 + 1, 2, 1),  // Int.max + 1
+            (100, -1, 1),         // negative
+            (1, Int.min, 1),      // Int.min
+        ] {
+            let error = #expect(throws: MoneyError.self) { try Money.allocationShare(of: magnitude, ratio: ratio, total: total) }
+            guard case .amountOverflow = error else {
+                Issue.record("Expected amountOverflow for \(magnitude) × \(ratio) / \(total), got \(String(describing: error))")
+                continue
+            }
         }
     }
 
-    @Test("Money * Decimal succeeds with large valid multiplication")
-    func decimalMultiplicationLarge() throws {
-        let money = try Money(amount: 1_000_000_000, currency: .JPY)
-        let result = try money * Decimal(1.5)
+    @Test("allocate takes ratios summing to exactly Int.max", arguments: CurrencyFixture.all)
+    func allocateLargeRatios(fixture: CurrencyFixture) throws {
+        for (amount, ratios, expected) in [
+            (100, [Int.max], [100]),
+            (100, [Int.max - 1, 1], [100, 0]),
+            (-100, [1, Int.max - 1], [-1, -99]),
+            (Int.max, [Int.max - 1, 1], [Int.max - 1, 1]),
+            (-Int.max, [Int.max / 2, Int.max / 2 + 1], [-(Int.max / 2), -(Int.max / 2 + 1)]),
+        ] {
+            #expect(try fixture.money(amount).allocate(by: ratios).map(\.amount) == expected, "\(amount) by \(ratios)")
+        }
 
-        #expect(result.amount == 1_500_000_000)
+        for amount in [Int.max, -Int.max, Int.max - 1000, 1, -7] {
+            let total = try fixture.money(amount)
+            for ratios in [[Int.max / 3, Int.max / 3, Int.max / 3 + 1], [Int.max - 2, 1, 1], [Int.max / 7, 0, Int.max / 7 * 6]] {
+                #expect(try total.allocate(by: ratios).sum(in: fixture.currency) == total, "\(amount) by \(ratios)")
+            }
+        }
+    }
+
+    // MARK: - Summation
+
+    @Test("sum nets signs, defines the empty case, and rejects mismatches", arguments: CurrencyFixture.all)
+    func sum(fixture: CurrencyFixture) throws {
+        let entries = try [5000, -3000, -2500].map(fixture.money)
+
+        #expect(try entries.sum(in: fixture.currency).amount == -500)
+        #expect(try [Money]().sum(in: fixture.currency) == Money.zero(fixture.currency))
+        #expect(throws: MoneyError.self) { try entries.sum(in: fixture.otherCode) }
+        #expect(throws: MoneyError.self) { try entries.sum(in: fixture.rescaled) }
+    }
+
+    @Test("A running balance goes negative naturally", arguments: CurrencyFixture.all)
+    func runningBalance(fixture: CurrencyFixture) throws {
+        var balance = Money.zero(fixture.currency)
+        balance = try balance + fixture.money(2000)
+        balance = try balance - fixture.money(3000)
+
+        #expect(balance.amount == -1000)
+        #expect(balance.isNegative)
+        #expect(balance.numericString == fixture.numericString(minor: -1000))
     }
 }
